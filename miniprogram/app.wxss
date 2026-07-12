@@ -1,0 +1,62 @@
+/* app.wxss — 全局样式
+ * 小程序全局样式缺失补丁（原为 0 字节）。
+ * 仅放真正全局、通用的规则；页面/组件特有样式留在各自 .wxss。
+ */
+
+page {
+  /* 与 app.json window 背景保持一致 */
+  background-color: #eeeeee;
+  font-size: 28rpx;
+  color: #333333;
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  line-height: 1.6;
+}
+
+view,
+text,
+image,
+button,
+input,
+textarea,
+scroll-view {
+  box-sizing: border-box;
+}
+
+/* 通用页面容器：留出安全边距 */
+.page-container {
+  padding: 24rpx;
+  min-height: 100vh;
+}
+
+/* 通用卡片：项目大量使用 card 范式（toolCard / customCard 等） */
+.card {
+  background-color: #ffffff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.06);
+}
+
+/* 主按钮兜底样式（组件各自可覆盖） */
+.btn-primary {
+  background-color: #07c160;
+  color: #ffffff;
+  border-radius: 12rpx;
+  padding: 18rpx 32rpx;
+  font-size: 30rpx;
+  text-align: center;
+}
+
+.btn-primary:active {
+  opacity: 0.85;
+}
+
+/* 文本辅助类 */
+.text-muted {
+  color: #999999;
+}
+
+.text-center {
+  text-align: center;
+}
