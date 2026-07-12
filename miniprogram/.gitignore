@@ -1,0 +1,14 @@
+# miniprogram/.gitignore —— 微信小程序子目录特定忽略
+#
+# 通用规则（node_modules / .DS_Store / IDE 等）已在根 .gitignore，
+# 这里只放小程序代码生成/下载的本地缓存。
+
+# 微信开发者工具刷新冗余文件
+*.bak
+
+# 本地测试运行时生成
+node_modules/
+miniprogram_npm/
+
+# FTS5 之类的临时文件
+*.tmp

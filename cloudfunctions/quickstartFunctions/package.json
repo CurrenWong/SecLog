@@ -1,0 +1,9 @@
+{
+  "name": "quickstartFunctions",
+  "version": "1.0.0",
+  "description": "SecLog 项目快速入门云函数（回显 + 环境信息）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}
