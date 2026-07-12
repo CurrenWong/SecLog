@@ -1,4 +1,5 @@
 {
-  "usingComponents": {
-  }
+  "usingComponents": {},
+  "navigationBarTitleText": "秒记",
+  "enablePullDownRefresh": true
 }

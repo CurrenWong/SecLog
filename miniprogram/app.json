@@ -2,7 +2,7 @@
   "pages": [
     "pages/index/index",
     "pages/chatBot/chatBot",
-    "pages/foodBuy/foodBuy"
+    "pages/guide/guide"
   ],
   "usingComponents": {
     "custom-map": "/components/toolCard/map/index",
@@ -13,8 +13,8 @@
   "window": {
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "腾讯云开发Agent-UI",
-    "backgroundColor": "#eeeeee",
+    "navigationBarTitleText": "秒记",
+    "backgroundColor": "#f7f8fa",
     "backgroundTextStyle": "light",
     "enablePullDownRefresh": true
   },

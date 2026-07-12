@@ -2,5 +2,6 @@
   "usingComponents": {
     "agent-ui":"/components/agent-ui/index"
   },
+  "navigationBarTitleText": "秒记 · 记账",
   "enablePullDownRefresh": true
 }
