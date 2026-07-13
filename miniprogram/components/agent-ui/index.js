@@ -7,6 +7,10 @@ Component({
       type: String,
       value: "",
     },
+    systemPrompt: {
+      type: String,
+      value: "",
+    },
     envShareConfig: {
       type: Object,
       value: {},
@@ -1778,6 +1782,9 @@ Component({
           data: {
             model: quickResponseModel,
             messages: [
+              ...(this.data.systemPrompt
+                ? [{ role: 'system', content: this.data.systemPrompt }]
+                : []),
               ...chatRecords.map((item) => ({
                 role: item.role,
                 content: item.content,

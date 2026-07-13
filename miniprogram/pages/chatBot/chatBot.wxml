@@ -1,5 +1,5 @@
 <!--pages/chatBot/chatBot.wxml-->
 <view>
-  <agent-ui id="agentui" agentConfig="{{agentConfig}}" showBotAvatar="{{showBotAvatar}}" chatMode="{{chatMode}}" modelConfig="{{modelConfig}}" envShareConfig="{{envShareConfig}}" bind:userSend="onUserSend" bind:messageDone="onMessageDone">
+  <agent-ui id="agentui" agentConfig="{{agentConfig}}" showBotAvatar="{{showBotAvatar}}" chatMode="{{chatMode}}" modelConfig="{{modelConfig}}" systemPrompt="{{systemPrompt}}" envShareConfig="{{envShareConfig}}" bind:userSend="onUserSend" bind:messageDone="onMessageDone">
   </agent-ui>
 </view>
