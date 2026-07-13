@@ -1,4 +1,4 @@
-# 秒记 (MiaoJi)
+﻿# 秒记 (MiaoJi)
 
 > 说话即记账的 AI 记账微信小程序。基于腾讯云开发（CloudBase）+ 大模型，用户用自然语言说出消费，AI 自动识别金额、分类并保存。
 
@@ -19,7 +19,7 @@
 - 微信小程序（原生，无 Taro/uni-app）
 - **腾讯云开发（CloudBase）** + `wx.cloud` SDK
   - env: `seclog-d1g8no5pc45e643aa`（`ap-shanghai`）
-- 云开发 Agent（`bot-e7d1e736`）+ 云函数 `miaojiRecord` 完成记账数据读写
+- 云开发 Agent（`agent-miaojijizha-5esko48c0cb04a`）+ 云函数 `miaojiRecord` 完成记账数据读写
 - 对话 UI 复用 `components/agent-ui` 组件
 - 基础库最低 `3.8.1`，本地推荐 `3.16.2`（见 `project.private.config.json`）
 
@@ -70,12 +70,12 @@ npm i -g @cloudbase/cli
 ## 记账数据流
 
 ```
-用户说话 → chatBot(agent-ui) → CloudBase Agent(bot-e7d1e736)
+用户说话 → chatBot(agent-ui) → CloudBase Agent(agent-miaojijizha-5esko48c0cb04a)
          → 调用 miaojiRecord 云函数 → 读写 miaoji_records 集合（按 openid 隔离）
 首页 onShow → 直接调用 miaojiRecord(summary / list) → 展示汇总与最近记录
 ```
 
-> ⚠️ **要使对话真正记账**，需在 CloudBase 控制台为 `bot-e7d1e736` 配置调用 `miaojiRecord` 云函数的工具（agent 侧工具绑定不在这份代码里）。前端 UI 已就绪，配好即生效。
+> ⚠️ **要使对话真正记账**，需在 CloudBase 控制台为 `agent-miaojijizha-5esko48c0cb04a` 配置调用 `miaojiRecord` 云函数的工具（agent 侧工具绑定不在这份代码里）。前端 UI 已就绪，配好即生效。
 
 ## 配置说明
 
@@ -101,3 +101,4 @@ npm i -g @cloudbase/cli
 ---
 
 **最后更新**: 2026-07-13 — 转型为「秒记」AI 记账工具（后端 + 首页 + 引导页 + 对话改造），README 同步重写
+

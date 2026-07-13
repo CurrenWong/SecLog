@@ -8,7 +8,7 @@ Page({
     chatMode: "bot", // bot: agent 模式（对接秒记记账 agent）；model：直连大模型
     showBotAvatar: true, // 是否在对话框左侧显示头像
     agentConfig: {
-      botId: "bot-e7d1e736", // 秒记记账 Agent ID（在 CloudBase 后台为该 bot 配置 miaojiRecord 工具）
+      botId: "agent-miaojijizha-5esko48c0cb04a", // 秒记记账 Agent ID（CloudBase 后台已建，需挂 miaojiRecord 工具）
       allowWebSearch: false, // 记账场景无需联网搜索
       allowUploadFile: false, // 暂不开文件上传（后续可开启小票识别）
       allowPullRefresh: true, // 允许下拉刷新
