@@ -1448,6 +1448,9 @@ Component({
         chatStatus: 1, // 聊天状态切换为1发送中
       });
 
+      // 抛出用户输入文本，供宿主页（如秒记）解析记账意图
+      this.triggerEvent('userSend', { content: inputValue });
+
       // 新增一轮对话记录时 自动往下滚底
       this.autoToBottom();
       if (chatMode === "bot") {
@@ -1844,6 +1847,18 @@ Component({
           this.triggerEvent('messageDone', { content: contentText, role: 'assistant' });
         }
       }
+    },
+    // 供宿主页往对话流追加一条消息（如秒记记账成功确认）
+    appendAssistantMessage: function (content) {
+      const newValue = [...this.data.chatRecords];
+      newValue.push({
+        content: content,
+        record_id: 'record_id' + String(+new Date()),
+        role: 'assistant',
+        hiddenBtnGround: true,
+      });
+      this.setData({ chatRecords: newValue });
+      this.autoToBottom();
     },
     toBottom: async function (unit) {
       const addUnit = unit === undefined ? 4 : unit;

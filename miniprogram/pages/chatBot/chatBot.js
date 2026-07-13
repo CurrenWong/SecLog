@@ -1,13 +1,12 @@
 // pages/chatBot/chatBot.js
 // 秒记记账对话：chatMode 用 model（直连大模型，忽略 Agent/bot）
-// 记账逻辑完全在前端：监听 agent-ui 的 messageDone 事件，
-// 解析模型回复里的消费信息，调用 miaojiRecord 云函数写入数据库。
+// 记账逻辑完全在前端：监听 agent-ui 的 userSend 事件拿用户输入，
+// 解析消费信息，调用 miaojiRecord 云函数写入数据库，并在对话里追加记账确认。
 Page({
   data: {
     chatMode: "model", // model：直连大模型（cloudbase/hy3），不依赖 Agent
     showBotAvatar: true,
     agentConfig: {
-      // model 模式下 botId 非必填，保留空结构以兼容组件
       botId: "",
       allowWebSearch: false,
       allowUploadFile: false,
@@ -19,26 +18,32 @@ Page({
       showBotName: false,
     },
     modelConfig: {
-      modelProvider: "cloudbase", // 大模型服务厂商
-      quickResponseModel: "hy3", // 具体模型
+      modelProvider: "cloudbase",
+      quickResponseModel: "hy3",
       logo: "",
       welcomeMsg: "你好，我是秒记 💡 说出你的消费，我来帮你记。例如：午饭花了38块",
     },
     envShareConfig: null,
   },
 
-  // agent-ui 在 model 模式流式结束后抛出模型最终回复
-  onMessageDone(e) {
-    const content = (e.detail && e.detail.content) || '';
-    this.tryRecord(content);
+  // 用户输入发送时触发（agent-ui 抛出）
+  onUserSend(e) {
+    const text = (e.detail && e.detail.content) || '';
+    this.tryRecord(text, true);
   },
 
-  // 解析消费文本并记账
+  // 兼容：模型回复结束也可触发（用模型回复兜底解析，但优先用户原话）
+  onMessageDone(e) {
+    // 此处不重复记账，记账以用户原话为准（onUserSend）
+  },
+
+  // 解析消费文本并记账。useUserText=true 时 note 取用户原话
   tryRecord(text) {
     if (!text) return;
     const parsed = this.parseExpense(text);
     if (!parsed) return; // 不是记账意图，忽略
 
+    const self = this;
     wx.cloud.callFunction({
       name: 'miaojiRecord',
       data: {
@@ -51,10 +56,14 @@ Page({
       },
     }).then((res) => {
       if (res.result && res.result.success) {
-        wx.showToast({
-          title: `已记：${parsed.category} ${parsed.amount < 0 ? '' : '+'}${parsed.amount}`,
-          icon: 'success',
-        });
+        const sign = parsed.amount < 0 ? '-' : '+';
+        const msg = `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${parsed.note ? '（' + parsed.note + '）' : ''}`;
+        // 在对话流里追加记账确认
+        const comp = self.selectComponent('#agentui');
+        if (comp && comp.appendAssistantMessage) {
+          comp.appendAssistantMessage(msg);
+        }
+        wx.showToast({ title: '记账成功', icon: 'success' });
       } else {
         wx.showToast({ title: '记账失败', icon: 'none' });
       }
@@ -66,11 +75,7 @@ Page({
 
   // 从文本提取消费信息。返回 {amount, category, note} 或 null
   parseExpense(text) {
-    // 收支意图：先判断是收入还是支出
     const isIncome = /(收入|工资|赚|收|到账|奖金|报销|分红)/i.test(text);
-
-    // 金额：支持 "38块" "38元" "38.5" "-38" "花了38" 等
-    // 优先匹配带消费/收入动词的金额，其次带单位，最后纯数字
     const amountPatterns = [
       /(?:花|支|付|买|消费|支出|付了|花了|用了|请客|喝|吃|打车|收到|赚|挣|报销)[^0-9\-]*?(-?\d+(?:\.\d+)?)\s*(?:元|块|刀|rmb)?/i,
       /(-?\d+(?:\.\d+)?)\s*(?:元|块|刀|rmb)/i,
@@ -83,10 +88,8 @@ Page({
     }
     if (raw === null || isNaN(raw)) return null;
 
-    // 最终金额：收入取正，支出取负（默认支出）
     const amount = isIncome ? Math.abs(raw) : -Math.abs(raw);
 
-    // 分类：根据关键词推断（收入统一归"收入"类便于统计）
     if (isIncome) {
       return { amount, category: '收入', note: text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20) };
     }
@@ -104,7 +107,7 @@ Page({
       if (item.keys.some((k) => text.includes(k))) { category = item.cat; break; }
     }
 
-    // 备注：去掉金额部分后的简短描述（取前 20 字）
+    // note 取用户原话去掉金额后的简短描述
     const note = text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20);
 
     return { amount, category, note };
