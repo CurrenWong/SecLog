@@ -3,6 +3,7 @@ Page({
     summary: { day: { income: 0, expense: 0 }, month: { income: 0, expense: 0 } },
     recent: [],
     loading: true,
+    _fetching: false, // 防重复调用
   },
 
   onShow() {
@@ -10,9 +11,10 @@ Page({
   },
 
   loadData() {
-    this.setData({ loading: true })
-    const db = wx.cloud.database ? null : null // 占位，实际走云函数
-    // 汇总
+    if (this.data._fetching) return
+    this.setData({ loading: true, _fetching: true })
+
+    // 汇总（先发）
     wx.cloud.callFunction({
       name: 'miaojiRecord',
       data: { action: 'summary' },
@@ -22,12 +24,12 @@ Page({
       }
     }).catch((err) => {
       console.error('summary failed', err)
-    })
-
-    // 最近记录
-    wx.cloud.callFunction({
-      name: 'miaojiRecord',
-      data: { action: 'list', payload: { limit: 5 } },
+    }).finally(() => {
+      // 拉完汇总再拉列表（串行，减少并发冲击）
+      return wx.cloud.callFunction({
+        name: 'miaojiRecord',
+        data: { action: 'list', payload: { limit: 5 } },
+      })
     }).then((res) => {
       if (res.result && res.result.success) {
         const recent = (res.result.list || []).map((r) => ({
@@ -36,16 +38,14 @@ Page({
           type: r.type,
           category: r.category,
           note: r.note,
-          // createdAt 在服务端是 serverDate，客户端拿到的是字符串或 Date
           time: this.formatTime(r.createdAt),
         }))
-        this.setData({ recent, loading: false })
-      } else {
-        this.setData({ loading: false })
+        this.setData({ recent })
       }
     }).catch((err) => {
       console.error('list failed', err)
-      this.setData({ loading: false })
+    }).finally(() => {
+      this.setData({ loading: false, _fetching: false })
     })
   },
 
