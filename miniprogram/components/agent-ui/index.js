@@ -1839,6 +1839,10 @@ Component({
         const lastValue = newValue[newValue.length - 1];
         lastValue.hiddenBtnGround = isManuallyPaused; // 用户手动暂停，不显示下面的按钮
         this.setData({ chatRecords: newValue, chatStatus: 0 }); // 回正
+        // 抛出模型最终回复，供宿主页做后续处理（如秒记前端记账解析）
+        if (contentText) {
+          this.triggerEvent('messageDone', { content: contentText, role: 'assistant' });
+        }
       }
     },
     toBottom: async function (unit) {
