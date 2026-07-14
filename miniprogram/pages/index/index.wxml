@@ -45,7 +45,7 @@
         <view class="record-note">{{item.note || '无备注'}}</view>
         <view class="record-time">{{item.time}}</view>
         <view class="record-amount {{item.type === 'income' ? 'income' : 'expense'}}">
-          {{item.type === 'income' ? '+' : '-'}}¥{{item.amount}}
+          {{item.type === 'income' ? '+' : '-'}}¥{{item.amount < 0 ? -item.amount : item.amount}}
         </view>
       </view>
     </view>
