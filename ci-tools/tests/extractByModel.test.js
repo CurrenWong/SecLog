@@ -61,10 +61,16 @@ describe('extractByModel 大模型降级抽取', () => {
     expect(r).toBeNull()
   })
 
-  test('无记账意图（模型返回 amount:0）→ null，不误记', async () => {
+  test('无记账意图（模型返回 amount:0）→ {intent:false}，显式确认非记账', async () => {
     const callModel = fakeCallModel('{"amount":0}')
     const r = await extractByModel('今天天气真好', callModel)
-    expect(r).toBeNull()
+    expect(r).toEqual({ intent: false })
+  })
+
+  test('无记账意图（模型显式 isExpense:false）→ {intent:false}', async () => {
+    const callModel = fakeCallModel('{"isExpense":false}')
+    const r = await extractByModel('今天心情不错', callModel)
+    expect(r).toEqual({ intent: false })
   })
 
   test('模型返回非 JSON 垃圾 → null', async () => {

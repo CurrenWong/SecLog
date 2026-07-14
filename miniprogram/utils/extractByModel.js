@@ -67,6 +67,10 @@ function buildPrompt(text) {
 }
 
 // 主入口：调用模型抽取并校验
+// 返回：
+//   { amount, category, note }  → 抽到一笔记账
+//   { intent: false }           → 模型明确判断：非记账意图（交给对话/闲聊）
+//   null                        → 模型调用失败 / 无法解析（保守不记）
 async function extractByModel(text, callModel) {
   if (!text || typeof callModel !== 'function') return null
   let raw
@@ -77,8 +81,10 @@ async function extractByModel(text, callModel) {
   }
   const parsed = extractJson(raw)
   if (!parsed) return null
-  // amount=0 视为无记账意图
-  if (Number(parsed.amount) === 0) return null
+  // amount=0 或显式 isExpense:false → 模型确认：这不是一笔记账
+  if (Number(parsed.amount) === 0 || parsed.isExpense === false) {
+    return { intent: false }
+  }
   return validate(parsed)
 }
 

@@ -171,4 +171,17 @@ describe('B2 失败路径（callFunction reject / 模型降级失败）', () => 
     // 注意：不应弹「记账出错」——用户只是说了句模糊话，应交给模型正常对话，而非报错刷屏
     expect(global.wx.showToast).not.toHaveBeenCalled()
   })
+
+  test('tryRecord: 正则 null + 模型确认非记账(intent:false) → 不记、不插卡片（交给对话）', async () => {
+    // 正则抽不到，调模型 → 模型返回 {amount:0}（extractByModel 转成 {intent:false}）
+    // 真实 tryRecord 应明确 return，不记账、不插卡片，由 agent-ui 模型对话接管（闲聊）
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"amount":0}')
+
+    await inst.tryRecord('今天天气不错') // 正则 null → 模型 → intent:false
+    await sleep()
+
+    expect(callFunctionMock).not.toHaveBeenCalled() // 没尝试记账
+    expect(appendMock).not.toHaveBeenCalled() // 没确认卡片（区分于"记成功"）
+  })
 })

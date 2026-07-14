@@ -24,8 +24,12 @@ async function tryRecord(text, callModel, ctx) {
   let parsed = parseExpense(text)
   let source = parsed ? 'regex' : null
   if (!parsed) {
-    parsed = await extractByModel(text, callModel)
-    if (parsed) source = 'model'
+    const modelRes = await extractByModel(text, callModel)
+    if (modelRes && modelRes.intent === false) {
+      // 模型明确判断：非记账意图 → 交给对话，不记账
+      return { recorded: false, intent: false }
+    }
+    if (modelRes) { parsed = modelRes; source = 'model' }
   }
   if (!parsed) return { recorded: false }
   const r = await call('add', parsed, ctx)
@@ -54,6 +58,21 @@ describe('chatBot 确认消息归一（按建议修改后）', () => {
   test('两层都抽不到 → 不记账（无确认消息）', async () => {
     const r = await tryRecord('今天天气不错', async () => '{"amount":0}', { OPENID: 'u' })
     expect(r.recorded).toBe(false)
+  })
+
+  test('正则 null + 模型确认非记账(intent:false) → 不记、intent 信号明确', async () => {
+    // 正则抽不到（闲聊），模型明确判断不是记账 → 交给对话，不插卡片不记账
+    const r = await tryRecord('今天天气不错', async () => '{"amount":0}', { OPENID: 'u' })
+    expect(r.recorded).toBe(false)
+    expect(r.intent).toBe(false) // 显式信号：模型确认非记账，而非"抽取失败"
+  })
+
+  test('正则 null + 模型判定是记账（模糊值）→ 记，带核实语气', async () => {
+    const callModel = async () => '{"amount":-55,"category":"餐饮","note":"火锅"}'
+    const r = await tryRecord('中午跟同事吃了顿火锅大概五十多', callModel, { OPENID: 'u' })
+    expect(r.recorded).toBe(true)
+    expect(r.source).toBe('model')
+    expect(r.confirm).toContain('大概的，对吗？')
   })
 
   test('确认消息由前端代码统一生成（source 决定文案，模型回复不重复）', async () => {

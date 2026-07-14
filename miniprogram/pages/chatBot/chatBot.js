@@ -119,16 +119,22 @@ Page({
   },
 
   // 解析消费文本并记账。混合策略：正则优先（确定），模型兜底（模糊）。
+  // 正则判断不出 → 必须让大模型判断意图：抽到则记（模糊值带核实语气），
+  // 模型确认非记账(intent:false) → 交给对话变闲聊，两层都失败则保守不记。
   // source 记录来源：regex=确定值直接确认；model=模糊值带核实语气。
   async tryRecord(text) {
     if (!text) return;
     let parsed = parseExpense(text) // 正则（快/免费/确定）
     let source = parsed ? 'regex' : null
     if (!parsed) {
-      // 正则完全抽不到 → 降级调大模型
+      // 正则完全抽不到 → 降级调大模型做意图判断 + 抽取
       try {
-        parsed = await extractByModel(text, (prompt) => this.callModelForExtract(prompt))
-        if (parsed) source = 'model'
+        const modelRes = await extractByModel(text, (prompt) => this.callModelForExtract(prompt))
+        if (modelRes && modelRes.intent === false) {
+          // 模型明确判断：这不是记账意图 → 交给 agent-ui 模型对话（闲聊），不记账、不插卡片
+          return
+        }
+        if (modelRes) { parsed = modelRes; source = 'model' }
       } catch (e) {
         parsed = null
       }
