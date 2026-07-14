@@ -1,0 +1,8 @@
+# ci-tools 本地构建产物（转译副本，不进 git）
+.build/
+
+# 预览二维码
+qrcode-*.png
+
+# 密钥（绝不入版本库）
+*.key

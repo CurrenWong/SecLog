@@ -72,6 +72,6 @@
     "include": []
   },
   "appid": "WX_OWN_APPID_PLACEHOLDER",
-  "libVersion": "3.8.1",
+  "libVersion": "3.16.2",
   "simulatorPluginLibVersion": {}
 }
