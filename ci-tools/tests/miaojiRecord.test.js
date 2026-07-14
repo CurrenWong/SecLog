@@ -180,6 +180,21 @@ describe('B1 误记防护（非消费数字不记）', () => {
     // 这是有意保守设计：误记比漏记更糟，用户说"奖金500元"即可正常记。
     expect(parseExpense('奖金500')).toBeNull()
   })
+
+  // —— B1 回归补充：餐饮类目词无单位也应记（修复"午饭38"不记）——
+  test('正常：午饭38（无单位）→ -38 餐饮（类目词即消费意图）', () => {
+    expect(parseExpense('午饭38')).toEqual({ amount: -38, category: '餐饮', note: '午饭' })
+  })
+  test('正常：早餐25 → -25 餐饮', () => {
+    expect(parseExpense('早餐25')).toEqual({ amount: -25, category: '餐饮', note: '早餐' })
+  })
+  test('正常：晚饭60块 → -60 餐饮（类目词+单位）', () => {
+    expect(parseExpense('晚饭60块')).toEqual({ amount: -60, category: '餐饮', note: '晚饭' })
+  })
+  test('回归：仍不破坏 B1 防护（第3名奖金/墙高3块砖 仍 null）', () => {
+    expect(parseExpense('第3名奖金')).toBeNull()
+    expect(parseExpense('这堵墙高3块砖')).toBeNull()
+  })
 })
 
 describe('记账端到端链路（T3）', () => {

@@ -24,14 +24,14 @@ Page({
       }
     }).catch((err) => {
       console.error('summary failed', err)
-    }).finally(() => {
-      // 拉完汇总再拉列表（串行，减少并发冲击）
+    }).then(() => {
+      // 拉完汇总再拉列表（串行，用 .then 传递结果，不能用 .finally——finally 会吞掉返回值）
       return wx.cloud.callFunction({
         name: 'miaojiRecord',
         data: { action: 'list', payload: { limit: 5 } },
       })
     }).then((res) => {
-      if (res.result && res.result.success) {
+      if (res && res.result && res.result.success) {
         const recent = (res.result.list || []).map((r) => ({
           _id: r._id,
           amount: r.amount,
