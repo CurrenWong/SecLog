@@ -175,10 +175,10 @@ describe('B1 误记防护（非消费数字不记）', () => {
   test('防护：第38名 → null', () => {
     expect(parseExpense('我排第38名')).toBeNull()
   })
-  test('防护：奖金500（无单位）→ null（保守：漏记优先于误记，用户可补"元"）', () => {
-    // 行为说明：去掉裸数字第三式后，"奖金500"无单位词不抽金额→null。
-    // 这是有意保守设计：误记比漏记更糟，用户说"奖金500元"即可正常记。
-    expect(parseExpense('奖金500')).toBeNull()
+  test('防护：奖金500（无单位）→ +500 收入（收入词是明确意图，应记，不保守漏记）', () => {
+    // 注：此前 B1 保守设计把"奖金500"判 null，但"奖金"是明确收入词，应记。
+    // 与"午饭38"同理（类目词即消费意图），收入词即收入意图。
+    expect(parseExpense('奖金500')).toEqual({ amount: 500, category: '收入', note: '奖金' })
   })
 
   // —— B1 回归补充：餐饮类目词无单位也应记（修复"午饭38"不记）——
@@ -190,6 +190,21 @@ describe('B1 误记防护（非消费数字不记）', () => {
   })
   test('正常：晚饭60块 → -60 餐饮（类目词+单位）', () => {
     expect(parseExpense('晚饭60块')).toEqual({ amount: -60, category: '餐饮', note: '晚饭' })
+  })
+  // —— B1 回归补充（续）：收入类词无单位也应记（修复"发工资100"不记）——
+  test('正常：发工资100（无单位）→ +100 收入', () => {
+    expect(parseExpense('发工资100')).toEqual({ amount: 100, category: '收入', note: '发工资' })
+  })
+  test('正常：工资100 → +100 收入', () => {
+    expect(parseExpense('工资100')).toEqual({ amount: 100, category: '收入', note: '工资' })
+  })
+  test('正常：奖金500（无单位）→ +500 收入（覆盖 B1 保守设计的例外）', () => {
+    // 注：此前"奖金500"无单位被 B1 保守设计判 null，但"奖金"是明确收入词，应记。
+    // 收入类词前缀模式已放开（与餐饮类目词同理），仅"第N名奖金"这类仍不记。
+    expect(parseExpense('奖金500')).toEqual({ amount: 500, category: '收入', note: '奖金' })
+  })
+  test('正常：分红2000 → +2000 收入', () => {
+    expect(parseExpense('分红2000')).toEqual({ amount: 2000, category: '收入', note: '分红' })
   })
   test('回归：仍不破坏 B1 防护（第3名奖金/墙高3块砖 仍 null）', () => {
     expect(parseExpense('第3名奖金')).toBeNull()
