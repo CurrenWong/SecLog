@@ -8,6 +8,8 @@ node_modules/
 dist/
 build/
 miniprogram_npm/
+ci-tools/.build/
+ci-tools/qrcode-*.png
 
 # 微信开发者工具缓存
 .project.private.config.json

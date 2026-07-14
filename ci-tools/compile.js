@@ -34,14 +34,15 @@ function die(msg, code = 1) {
 
 // ===== babel 转译（方案 A2）=====
 let babel = null;
+let BABEL_PLUGINS = null;
 try {
   babel = require('@babel/core');
+  // 直接 require 插件对象，避免 babel 内部按字符串名解析模块时受 miniprogram-ci 依赖树干扰
+  BABEL_PLUGINS = [
+    require('@babel/plugin-transform-optional-chaining'),
+    require('@babel/plugin-transform-nullish-coalescing-operator'),
+  ];
 } catch (_) {}
-
-const BABEL_PLUGINS = [
-  '@babel/plugin-transform-optional-chaining',
-  '@babel/plugin-transform-nullish-coalescing-operator',
-];
 
 function transpileProject() {
   if (!babel) {
