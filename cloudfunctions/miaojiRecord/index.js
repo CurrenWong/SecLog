@@ -128,20 +128,24 @@ exports.main = async (event, context) => {
         const { month, category } = payload || {}
         // 确定统计起止时间
         let start, end
+        let useLt = false // 是否加 _.lt(end) 上限（仅指定历史月份时需要）
         if (month && month !== 'this') {
           // month 格式 'YYYY-MM'
           const [y, m] = month.split('-').map(Number)
           start = new Date(y, m - 1, 1)
           end = new Date(y, m, 1) // 下月 1 号 0 点（不含）
+          useLt = true
         } else {
+          // 本月：与 summary 对齐，只用 _.gte(startOfMonth)，不加 _.lt
+          // （避免云端 serverDate 存 UTC、本地构造 end 时区错位导致整月数据被过滤）
           const now = new Date()
           start = new Date(now.getFullYear(), now.getMonth(), 1)
-          end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
         }
 
         const cond = { createdAt: _.gte(start) }
         if (owner) cond.openid = owner.openid
-        const q = db.collection(COLLECTION).where(cond).where({ createdAt: _.lt(end) })
+        let q = db.collection(COLLECTION).where(cond)
+        if (useLt) q = q.where({ createdAt: _.lt(end) })
         const res = await q.get()
 
         const rows = res.data
