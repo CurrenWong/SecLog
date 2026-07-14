@@ -39,6 +39,8 @@ function makeInst() {
   return inst
 }
 
+const sleep = (ms = 20) => new Promise((r) => setTimeout(r, ms))
+
 beforeEach(() => {
   callFunctionMock.mockReset()
   appendMock.mockReset()
@@ -113,5 +115,60 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(actions).toContain('add')
     expect(appendMock).toHaveBeenCalled()
     expect(appendMock.mock.calls[0][0]).toContain('✅ 已记')
+  })
+})
+
+// B2: 失败路径（网络/传输层 reject，区别于业务层 success:false）
+// 核心断言：失败时【绝不】插入确认卡片（不能假装成功），并弹对应错误 toast。
+describe('B2 失败路径（callFunction reject / 模型降级失败）', () => {
+  test('tryRecord: 网络超时 reject → 不插卡片 + toast「记账出错」', async () => {
+    callFunctionMock.mockImplementation(() => Promise.reject(new Error('network timeout')))
+    const inst = makeInst()
+    await inst.tryRecord('午饭38块')
+    await sleep()
+
+    expect(appendMock).not.toHaveBeenCalled() // 没假装成功
+    expect(global.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '记账出错' }))
+  })
+
+  test('tryUndo: list 网络 reject → 不插卡片 + toast「撤回出错」', async () => {
+    callFunctionMock.mockImplementation(({ data }) => {
+      if (data.action === 'list') return Promise.reject(new Error('list net'))
+      return Promise.resolve({ result: { success: true } })
+    })
+    const inst = makeInst()
+    inst.onUserSend({ detail: { content: '记错了' } })
+    await sleep()
+
+    expect(appendMock).not.toHaveBeenCalled()
+    expect(global.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '撤回出错' }))
+  })
+
+  test('tryUndo: list 成功但 delete 网络 reject → toast「撤回出错」，无撤回卡片', async () => {
+    callFunctionMock.mockImplementation(({ data }) => {
+      if (data.action === 'list') return Promise.resolve({ result: { success: true, list: [{ _id: 'x1', amount: -38, category: '餐饮' }] } })
+      if (data.action === 'delete') return Promise.reject(new Error('delete net'))
+      return Promise.resolve({ result: { success: true } })
+    })
+    const inst = makeInst()
+    inst.onUserSend({ detail: { content: '记错了' } })
+    await sleep()
+
+    expect(global.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '撤回出错' }))
+    expect(appendMock).not.toHaveBeenCalledWith(expect.stringContaining('🗑️'))
+  })
+
+  test('tryRecord: 正则 null + 模型降级失败 → 静默不记账（无卡片、无 toast）', async () => {
+    // 模拟：正则抽不到（模糊闲聊），大模型通道也失败 → parsed 变 null → 不记账
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockRejectedValue(new Error('model net'))
+
+    await inst.tryRecord('嗯那个啥') // 无消费意图词 → 正则 null → 走模型 → 失败
+    await sleep()
+
+    expect(callFunctionMock).not.toHaveBeenCalled() // 没尝试记账云函数
+    expect(appendMock).not.toHaveBeenCalled() // 没确认卡片
+    // 注意：不应弹「记账出错」——用户只是说了句模糊话，应交给模型正常对话，而非报错刷屏
+    expect(global.wx.showToast).not.toHaveBeenCalled()
   })
 })
