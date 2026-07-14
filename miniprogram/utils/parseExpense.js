@@ -58,6 +58,14 @@ function stripAmount(text) {
   return text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20)
 }
 
+// 撤回意图识别：用户想撤销刚才记的一笔。确定性正则（不调模型，即时）。
+// 命中返回 true；非撤回意图返回 false。
+const UNDO_RE = /(记错|撤回|撤销|删掉|删除|不对|取消|退了|不要记|别记|搞错|记反)/i
+function parseUndo(text) {
+  if (!text) return false
+  return UNDO_RE.test(text)
+}
+
 function parseExpense(text) {
   if (!text) return null
   // 无记账意图（没有任何消费/收入关键词）则忽略，避免误记纯数字文本
@@ -84,4 +92,4 @@ function parseExpense(text) {
   return { amount, category, note: stripAmount(text) }
 }
 
-module.exports = { parseExpense }
+module.exports = { parseExpense, parseUndo }

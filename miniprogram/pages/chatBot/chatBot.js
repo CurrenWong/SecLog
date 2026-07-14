@@ -3,7 +3,7 @@
 // 记账逻辑完全在前端：监听 agent-ui 的 userSend 事件拿用户输入，
 // 解析消费信息，调用 miaojiRecord 云函数写入数据库，并在对话里追加记账确认。
 // 混合抽取：正则（parseExpense）命中即记；完全抽不到时降级调大模型（extractByModel）。
-const { parseExpense } = require('../../utils/parseExpense')
+const { parseExpense, parseUndo } = require('../../utils/parseExpense')
 const { extractByModel } = require('../../utils/extractByModel')
 
 Page({
@@ -37,12 +37,60 @@ Page({
   // 用户输入发送时触发（agent-ui 抛出）
   onUserSend(e) {
     const text = (e.detail && e.detail.content) || '';
-    this.tryRecord(text, true);
+    // 先判撤回意图（确定性正则，即时，不调模型）
+    if (parseUndo(text)) {
+      this.tryUndo(text);
+      return;
+    }
+    this.tryRecord(text);
   },
 
   // 兼容：模型回复结束也可触发（用模型回复兜底解析，但优先用户原话）
   onMessageDone(e) {
     // 此处不重复记账，记账以用户原话为准（onUserSend）
+  },
+
+  // 撤回最近一笔记账。先查最近一笔（list limit=1），再 delete。
+  tryUndo(text) {
+    const self = this;
+    wx.cloud.callFunction({
+      name: 'miaojiRecord',
+      data: { action: 'list', payload: { limit: 1 } },
+    }).then((res) => {
+      const list = (res.result && res.result.success && res.result.data) || [];
+      if (!list.length) {
+        self.appendUndoMsg('ℹ️ 没有可撤回的记录');
+        wx.showToast({ title: '没有记录', icon: 'none' });
+        return;
+      }
+      const last = list[0];
+      wx.cloud.callFunction({
+        name: 'miaojiRecord',
+        data: { action: 'delete', payload: { _id: last._id } },
+      }).then((del) => {
+        if (del.result && del.result.success) {
+          const sign = last.amount < 0 ? '-' : '+';
+          self.appendUndoMsg(`🗑️ 已撤回：<b>${last.category}</b> ${sign}¥${Math.abs(last.amount)}`);
+          wx.showToast({ title: '已撤回', icon: 'success' });
+        } else {
+          wx.showToast({ title: '撤回失败', icon: 'none' });
+        }
+      }).catch((err) => {
+        console.error('miaojiRecord delete failed', err);
+        wx.showToast({ title: '撤回出错', icon: 'none' });
+      });
+    }).catch((err) => {
+      console.error('miaojiRecord list failed', err);
+      wx.showToast({ title: '撤回出错', icon: 'none' });
+    });
+  },
+
+  // 在对话流追加撤回相关消息（与记账确认同一通道，唯一来源）
+  appendUndoMsg(msg) {
+    const comp = this.selectComponent('#agentui');
+    if (comp && comp.appendAssistantMessage) {
+      comp.appendAssistantMessage(msg);
+    }
   },
 
   // 调大模型做结构化抽取（复用 CloudBase AI model 通道，与 agent-ui 一致）

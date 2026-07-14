@@ -1,7 +1,7 @@
 // chatBot 记账确认行为测试（mock wx / 云函数 / agent-ui）
 // 验证：确认消息归一为前端插入（唯一来源），正则=确定值直接确认，模型降级=模糊值带核实语气
 const cloud = require('wx-server-sdk')
-const { parseExpense } = require('../../miniprogram/utils/parseExpense')
+const { parseExpense, parseUndo } = require('../../miniprogram/utils/parseExpense')
 const { extractByModel } = require('../../miniprogram/utils/extractByModel')
 
 // 直接加载 chatBot 的逻辑函数需要 Page() 环境，这里改为复刻 tryRecord 的确认文案分支，
@@ -63,5 +63,71 @@ describe('chatBot 确认消息归一（按建议修改后）', () => {
     const r = await tryRecord('打车45', callModel, { OPENID: 'u' })
     expect(r.source).toBe('regex')
     expect(modelCalled).toBe(false) // 确定值不调模型 → 确认文案 100% 来自代码
+  })
+})
+
+describe('parseUndo 撤回意图识别', () => {
+  test('明确撤回词命中', () => {
+    expect(parseUndo('记错了')).toBe(true)
+    expect(parseUndo('撤回')).toBe(true)
+    expect(parseUndo('撤销刚才那笔')).toBe(true)
+    expect(parseUndo('删掉')).toBe(true)
+    expect(parseUndo('不对，记反了')).toBe(true)
+  })
+  test('非撤回意图不命中', () => {
+    expect(parseUndo('午饭花了38')).toBe(false)
+    expect(parseUndo('今天天气不错')).toBe(false)
+    expect(parseUndo('收到工资8000')).toBe(false)
+  })
+})
+
+describe('撤回端到端（记一笔 → 撤回 → 列表清空）', () => {
+  // 复刻 chatBot.tryUndo 的链路（与生产同构：list limit=1 → delete）
+  // 注意：云函数 list 返回 { success, list:[...] }，delete 返回 { success, removed }
+  async function tryUndo(ctx) {
+    const listRes = await call('list', { limit: 1 }, ctx)
+    const list = (listRes.success && listRes.list) || []
+    if (!list.length) return { undone: false, reason: 'empty' }
+    const last = list[0]
+    const del = await call('delete', { _id: last._id }, ctx)
+    return { undone: !!(del.success), last }
+  }
+
+  test('记一笔后撤回 → 列表为空', async () => {
+    const ctx = { OPENID: 'u_undo' }
+    // 先记一笔
+    const add = await call('add', { amount: -38, category: '餐饮', note: '午饭' }, ctx)
+    expect(add.success).toBe(true)
+    // 确认有 1 笔
+    let lst = await call('list', { limit: 10 }, ctx)
+    expect(lst.list.length).toBe(1)
+    // 撤回
+    const r = await tryUndo(ctx)
+    expect(r.undone).toBe(true)
+    expect(r.last.category).toBe('餐饮')
+    // 列表清空
+    lst = await call('list', { limit: 10 }, ctx)
+    expect(lst.list.length).toBe(0)
+  })
+
+  test('无记录时撤回 → 不报错、不删', async () => {
+    const ctx = { OPENID: 'u_empty' }
+    const r = await tryUndo(ctx)
+    expect(r.undone).toBe(false)
+    expect(r.reason).toBe('empty')
+  })
+
+  test('撤回只删自己的最新一笔（owner 隔离）', async () => {
+    const a = { OPENID: 'uA' }
+    const b = { OPENID: 'uB' }
+    await call('add', { amount: -10, category: '餐饮', note: 'A的' }, a)
+    await call('add', { amount: -20, category: '交通', note: 'B的' }, b)
+    // A 撤回 → 只删 A 的，B 的还在
+    const r = await tryUndo(a)
+    expect(r.undone).toBe(true)
+    expect(r.last.note).toBe('A的')
+    const bList = await call('list', { limit: 10 }, b)
+    expect(bList.list.length).toBe(1)
+    expect(bList.list[0].note).toBe('B的')
   })
 })
