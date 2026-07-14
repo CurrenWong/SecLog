@@ -94,27 +94,54 @@ Page({
     }
   },
 
+  // 从 streamText 的各种返回结构里统一收集文本（CloudBase AI SDK 不同版本差异大）
+  async _collectStreamText(res) {
+    // 情况1：res 本身就是字符串
+    if (typeof res === 'string') return res
+    // 情况2：res.text 是字符串
+    if (typeof res.text === 'string') return res.text
+    // 情况3：res.text 是 Promise（部分 SDK 版本）
+    if (res && res.text && typeof res.text.then === 'function') {
+      try { return await res.text } catch (e) { /* ignore */ }
+    }
+    // 情况4：异步迭代器（OpenAI 兼容 / 简单格式）
+    if (res && typeof res[Symbol.asyncIterator] === 'function') {
+      let t = ''
+      for await (const chunk of res) {
+        if (!chunk) continue
+        // OpenAI 兼容：{ choices: [{ delta: { content } }] }
+        if (chunk.choices && chunk.choices[0] && chunk.choices[0].delta) {
+          t += chunk.choices[0].delta.content || ''
+        } else if (typeof chunk.delta === 'string') {
+          t += chunk.delta
+        } else if (typeof chunk.text === 'string') {
+          t += chunk.text
+        } else if (typeof chunk.content === 'string') {
+          t += chunk.content
+        } else if (typeof chunk === 'string') {
+          t += chunk
+        }
+      }
+      return t
+    }
+    return ''
+  },
+
   // 调大模型做结构化抽取（复用 CloudBase AI model 通道，与 agent-ui 一致）
   async callModelForExtract(prompt) {
     const { modelProvider, quickResponseModel } = this.data.modelConfig
     const cloudInstance = await require('../../utils/cloudInstance').getCloudInstance(this.data.envShareConfig)
     const ai = cloudInstance.extend.AI
     const aiModel = ai.createModel(modelProvider)
-    let text = ''
     const res = await aiModel.streamText({
       data: {
         model: quickResponseModel,
         messages: [{ role: 'user', content: prompt }],
       },
     })
-    // streamText 返回异步迭代器或带 text 字段的结果，兼容两种
-    if (res && typeof res[Symbol.asyncIterator] === 'function') {
-      for await (const chunk of res) {
-        text += (chunk.delta || chunk.text || (typeof chunk === 'string' ? chunk : ''))
-      }
-    } else if (res && res.text) {
-      text = res.text
-    }
+    const text = await this._collectStreamText(res)
+    // 诊断日志：扫码联调时可在开发者工具 console 看到模型原始返回（后续可删）
+    console.log('[callModelForExtract] raw:', JSON.stringify(text).slice(0, 500))
     return text
   },
 
