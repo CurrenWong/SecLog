@@ -6,7 +6,8 @@
   "scripts": {
     "dev-check": "node compile.js dev-check",
     "preview": "node compile.js preview",
-    "upload": "node compile.js upload"
+    "upload": "node compile.js upload",
+    "test": "jest --verbose"
   },
   "keywords": [
     "miniprogram-ci",
@@ -22,6 +23,9 @@
     "@babel/plugin-transform-nullish-coalescing-operator": "^8.0.1",
     "@babel/plugin-transform-optional-chaining": "^8.0.1",
     "dotenv": "^17.4.2",
-    "miniprogram-ci": "^2.1.31"
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "miniprogram-ci": "^2.1.31",
+    "miniprogram-simulate": "^1.6.2"
   }
 }

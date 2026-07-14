@@ -30,12 +30,17 @@ Component({
   },
   lifetimes: {
     attached() {
-      // 可以在这里动态设置城市天气数据
+      // 生命周期委托给 initWeather，便于单元测试独立调用
+      this.initWeather();
+    },
+  },
+  methods: {
+    initWeather() {
       // 根据 name 区分处理不同 tool 调用情况
       const { name, toolData } = this.data;
       if (name === "weather") {
         const { content } = toolData;
-        if (content[0].type === "text") {
+        if (content[0] && content[0].type === "text") {
           const contentData = JSON.parse(content[0].text);
           const {
             result: { forecast },
@@ -99,8 +104,6 @@ Component({
         }
       }
     },
-  },
-  methods: {
     checkIsDay() {
       const currentHour = new Date().getHours();
       this.setData({

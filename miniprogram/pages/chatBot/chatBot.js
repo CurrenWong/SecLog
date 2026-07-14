@@ -2,6 +2,10 @@
 // 秒记记账对话：chatMode 用 model（直连大模型，忽略 Agent/bot）
 // 记账逻辑完全在前端：监听 agent-ui 的 userSend 事件拿用户输入，
 // 解析消费信息，调用 miaojiRecord 云函数写入数据库，并在对话里追加记账确认。
+// 混合抽取：正则（parseExpense）命中即记；完全抽不到时降级调大模型（extractByModel）。
+const { parseExpense } = require('../../utils/parseExpense')
+const { extractByModel } = require('../../utils/extractByModel')
+
 Page({
   data: {
     chatMode: "model", // model：直连大模型（cloudbase/hy3），不依赖 Agent
@@ -39,11 +43,43 @@ Page({
     // 此处不重复记账，记账以用户原话为准（onUserSend）
   },
 
-  // 解析消费文本并记账。useUserText=true 时 note 取用户原话
-  tryRecord(text) {
+  // 调大模型做结构化抽取（复用 CloudBase AI model 通道，与 agent-ui 一致）
+  async callModelForExtract(prompt) {
+    const { modelProvider, quickResponseModel } = this.data.modelConfig
+    const cloudInstance = await require('../../utils/cloudInstance').getCloudInstance(this.data.envShareConfig)
+    const ai = cloudInstance.extend.AI
+    const aiModel = ai.createModel(modelProvider)
+    let text = ''
+    const res = await aiModel.streamText({
+      data: {
+        model: quickResponseModel,
+        messages: [{ role: 'user', content: prompt }],
+      },
+    })
+    // streamText 返回异步迭代器或带 text 字段的结果，兼容两种
+    if (res && typeof res[Symbol.asyncIterator] === 'function') {
+      for await (const chunk of res) {
+        text += (chunk.delta || chunk.text || (typeof chunk === 'string' ? chunk : ''))
+      }
+    } else if (res && res.text) {
+      text = res.text
+    }
+    return text
+  },
+
+  // 解析消费文本并记账。混合策略：正则优先，模型兜底。
+  async tryRecord(text) {
     if (!text) return;
-    const parsed = this.parseExpense(text);
-    if (!parsed) return; // 不是记账意图，忽略
+    let parsed = parseExpense(text) // 正则（快/免费/确定）
+    if (!parsed) {
+      // 正则完全抽不到 → 降级调大模型
+      try {
+        parsed = await extractByModel(text, (prompt) => this.callModelForExtract(prompt))
+      } catch (e) {
+        parsed = null
+      }
+    }
+    if (!parsed) return; // 两层都没抽到，不记账（交给模型正常对话回复）
 
     const self = this;
     wx.cloud.callFunction({
@@ -75,46 +111,7 @@ Page({
     });
   },
 
-  // 从文本提取消费信息。返回 {amount, category, note} 或 null
-  parseExpense(text) {
-    const isIncome = /(收入|工资|赚|收|到账|奖金|报销|分红)/i.test(text);
-    const amountPatterns = [
-      /(?:花|支|付|买|消费|支出|付了|花了|用了|请客|喝|吃|打车|收到|赚|挣|报销)[^0-9\-]*?(-?\d+(?:\.\d+)?)\s*(?:元|块|刀|rmb)?/i,
-      /(-?\d+(?:\.\d+)?)\s*(?:元|块|刀|rmb)/i,
-      /(-?\d+(?:\.\d+)?)/,
-    ];
-    let raw = null;
-    for (const p of amountPatterns) {
-      const m = text.match(p);
-      if (m) { raw = parseFloat(m[1]); break; }
-    }
-    if (raw === null || isNaN(raw)) return null;
-
-    const amount = isIncome ? Math.abs(raw) : -Math.abs(raw);
-
-    if (isIncome) {
-      return { amount, category: '收入', note: text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20) };
-    }
-    const categoryMap = [
-      { keys: ['午饭', '午餐', '早饭', '早餐', '晚饭', '晚餐', '饭', '吃', '餐', '喝', '奶茶', '咖啡', '餐厅'], cat: '餐饮' },
-      { keys: ['打车', '地铁', '公交', '车', '油', '停车', '高铁', '火车', '飞机', '机票', '滴滴'], cat: '交通' },
-      { keys: ['买', '购', '衣服', '鞋', '包', '数码', '手机', '电脑', '淘宝', '京东', '超市'], cat: '购物' },
-      { keys: ['房租', '水电', '物业', '家居', '家具', '日用品'], cat: '居家' },
-      { keys: ['电影', '游戏', '娱乐', '唱k', 'ktv', '旅游', '玩'], cat: '娱乐' },
-      { keys: ['药', '医', '医院', '诊所', '体检'], cat: '医疗' },
-      { keys: ['书', '课', '培训', '学费', '教育'], cat: '教育' },
-    ];
-    let category = '其他';
-    for (const item of categoryMap) {
-      if (item.keys.some((k) => text.includes(k))) { category = item.cat; break; }
-    }
-
-    // note 取用户原话去掉金额后的简短描述
-    const note = text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20);
-
-    return { amount, category, note };
-  },
-
+  // parseExpense 已抽到 utils/parseExpense.js（便于复用与单元测试）
   onLoad(options) {},
   onReady() {},
   onShow() {},
