@@ -31,7 +31,7 @@ Page({
     // 系统提示词：让直连大模型具备"秒记记账助手"人设
     // 关键：记账确认由前端代码统一插入（✅ 已记...），模型【不要】重复确认或复述金额，
     // 只在需要时自然接一句话（如补充提醒），避免对话里出现两条确认。
-    systemPrompt: "你是秒记，一款AI记账助手。规则：1) 当用户说出一笔消费或收入，秒记会自动记账并在对话里插入一条✅已记的确认，你【不要】再重复确认、不要复述金额，只需自然接一句轻松的话（如'好嘞，记上啦~'或'收到，已经帮你记好~'），不超过两句；2) 若用户说'错了/改成X/应该是X'等修正意图，秒记会自动帮你改好，你只需自然轻松地接一句（如'好嘞，已经帮你改成60啦~'或'没问题，改好咯~'），【不要】只回'改好'两个字的生硬短句，也不要复述金额；3) 若用户只是闲聊或提问，正常简洁回答；4) 始终用中文，口语化、亲切、有温度。",
+    systemPrompt: "你是秒记，一款AI记账助手。规则：1) 当用户说出一笔消费或收入，秒记会自动记账并在对话里插入一条✅已记的确认，你【不要】再重复确认、不要复述金额，只需自然接一句轻松的话（如'好嘞，记上啦~'或'收到，已经帮你记好~'），不超过两句；2) 若用户说'错了/改成X/应该是X'等修正意图，秒记会自动帮你改好，你只需自然轻松地接一句（如'好嘞，已经帮你改成60啦~'或'没问题，改好咯~'），【不要】只回'改好'两个字的生硬短句，也不要复述金额；3) 若用户提问【统计/花了多少/这个月开销/明细/分类汇总】等查询类问题，秒记会自动用【真实数据库】查出结果并插入对话（含准确金额和真实逐笔明细），你【绝对不要】自己算数字、【绝对不要】编造任何金额或明细清单，只回一句极轻量的接话（如'我帮你查一下~'）或不回；4) 若用户只是普通闲聊，正常简洁回答；5) 始终用中文，口语化、亲切、有温度。",
     envShareConfig: null,
   },
 
@@ -301,11 +301,7 @@ Page({
     const net = result.net || 0
     const count = result.count || 0
     if (count === 0) {
-      // 临时调试：把实际查询条件打到对话里，便于在开发者工具定位为什么是 0
-      const d = result._debug
-      let dbg = '\n[debug] '
-      if (d) dbg += 'owner=' + d.owner + ' start=' + d.startISO + ' rows=' + d.rows
-      return '📊 这个月还没记账呢，说一笔我帮你记上~' + dbg
+      return '📊 这个月还没记账呢，说一笔我帮你记上~'
     }
     let s = '📊 这个月你一共花了 ' + fmt(expense)
     if (income > 0) s += '，收入 ' + fmt(income) + '，净 ' + (net < 0 ? '-' : '+') + fmt(net)
@@ -315,6 +311,28 @@ Page({
         .map((c) => c.category + ' ' + fmt(c.amount))
         .join('、')
       s += '\n最多的是：' + top
+    }
+    // 真实逐笔明细（从云函数返回的 records 拼，绝不编造）
+    const records = result.records || []
+    if (records.length) {
+      // 按分类分组
+      const byCat = {}
+      for (const r of records) {
+        const cat = r.category || '其他'
+        if (!byCat[cat]) byCat[cat] = []
+        byCat[cat].push(r)
+      }
+      const lines = []
+      for (const cat of Object.keys(byCat)) {
+        lines.push('【' + cat + '】')
+        for (const r of byCat[cat]) {
+          const d = r.createdAt ? new Date(r.createdAt) : null
+          const dateStr = d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : ''
+          const sign = r.type === 'income' ? '+' : '-'
+          lines.push('- ' + dateStr + ' ' + (r.note || cat) + ' ' + sign + fmt(r.amount))
+        }
+      }
+      s += '\n\n这个月的记账明细：\n' + lines.join('\n')
     }
     return s
   },

@@ -219,3 +219,47 @@ describe('更正流程（correct 意图 → update 最近一笔）', () => {
     expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('-¥60'))
   })
 })
+
+describe('查询回复 buildQueryReply（真实明细，不依赖模型编造）', () => {
+  test('month 分支：从 records 拼真实逐笔明细（不编造）', () => {
+    const inst = makeInst()
+    const q = { type: 'month', month: 'this' }
+    const result = {
+      success: true,
+      expenseTotal: -560,
+      incomeTotal: 8000,
+      net: 7440,
+      count: 4,
+      byCategory: [{ category: '餐饮', amount: -200 }, { category: '交通', amount: -360 }],
+      records: [
+        { _id: 'r1', amount: -360, type: 'expense', category: '交通', note: '打车', createdAt: new Date('2026-07-10T10:00:00') },
+        { _id: 'r2', amount: -200, type: 'expense', category: '餐饮', note: '午饭', createdAt: new Date('2026-07-08T12:00:00') },
+        { _id: 'r3', amount: 8000, type: 'income', category: '收入', note: '工资', createdAt: new Date('2026-07-01T09:00:00') },
+        { _id: 'r4', amount: -0, type: 'expense', category: '其他', note: '', createdAt: new Date('2026-07-05T09:00:00') },
+      ],
+    }
+    const msg = inst.buildQueryReply(q, result)
+    // 总额正确（绝对值）
+    expect(msg).toContain('这个月你一共花了 ¥560')
+    expect(msg).toContain('收入 ¥8000')
+    // 真实明细存在（按分类分组 + 逐笔日期 + 金额），而非模型编造
+    expect(msg).toContain('【交通】')
+    expect(msg).toContain('打车 -¥360')
+    expect(msg).toContain('【餐饮】')
+    expect(msg).toContain('午饭 -¥200')
+    // 日期格式：M月D日
+    expect(msg).toContain('7月10日')
+    expect(msg).toContain('7月8日')
+    // 收入也列出来（+）
+    expect(msg).toContain('+¥8000')
+    // 不应出现任何"编造"信号：明细全部来自 records 字段，金额与 records 完全一致
+    expect(msg).not.toContain('1280') // 此前模型幻觉的数字，锁死
+  })
+
+  test('month 分支：count=0 → 提示未记账（无明细）', () => {
+    const inst = makeInst()
+    const q = { type: 'month', month: 'this' }
+    const result = { success: true, expenseTotal: 0, incomeTotal: 0, net: 0, count: 0, byCategory: [], records: [] }
+    expect(inst.buildQueryReply(q, result)).toContain('这个月还没记账呢')
+  })
+})

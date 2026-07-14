@@ -180,6 +180,18 @@ exports.main = async (event, context) => {
           .map((c) => ({ category: c, amount: byCategory[c] }))
           .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
 
+        // 本月真实逐笔记录（供前端拼明细，避免模型编造）
+        const records = rows
+          .map((r) => ({
+            _id: r._id,
+            amount: r.amount,
+            type: r.type || (r.amount < 0 ? 'expense' : 'income'),
+            category: r.category || '其他',
+            note: r.note || '',
+            createdAt: r.createdAt,
+          }))
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)) // 新→旧
+
         return {
           success: true,
           month: month && month !== 'this' ? month : 'this',
@@ -188,12 +200,7 @@ exports.main = async (event, context) => {
           net: incomeTotal + expenseTotal, // 支出为负，收入为正 → 净 = 收入 + 支出
           count: rows.length,
           byCategory: categories,
-          _debug: {
-            owner: owner ? owner.openid : null,
-            startISO: start.toISOString(),
-            rows: rows.length,
-            nowISO: new Date().toISOString(),
-          },
+          records,
         }
       }
 
