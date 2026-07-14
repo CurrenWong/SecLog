@@ -137,6 +137,51 @@ describe('parseExpense 文本解析（T2）', () => {
   })
 })
 
+// B1: 误记防护评测集（收紧意图识别 + 金额必须带单位/动作前缀）
+// 目标：非消费场景的数字（排名/温度/尺寸/股价/砖块…）一律不记
+describe('B1 误记防护（非消费数字不记）', () => {
+  // —— 应记（正常消费/收入，带动作词或单位）——
+  test('正常：奖金500元 → +500 收入', () => {
+    expect(parseExpense('奖金500元')).toEqual({ amount: 500, category: '收入', note: '奖金' })
+  })
+  test('正常：午饭38块 → -38 餐饮', () => {
+    expect(parseExpense('午饭38块')).toEqual({ amount: -38, category: '餐饮', note: '午饭' })
+  })
+  test('正常：花了120元买菜 → -120 其他', () => {
+    const r = parseExpense('花了120元买菜')
+    expect(r.amount).toBe(-120)
+    expect(r.note).toContain('买菜')
+  })
+
+  // —— 不记（漏洞修复：单位词不再单独构成意图，裸数字不抽）——
+  test('防护：墙高3块砖 → null（"块"非消费意图）', () => {
+    expect(parseExpense('这堵墙高3块砖')).toBeNull()
+  })
+  test('防护：股价跌了5块 → null（无消费动作词）', () => {
+    expect(parseExpense('股价跌了5块')).toBeNull()
+  })
+  test('防护：第3名奖金 → null（"3名"不是金额，裸数字不抽）', () => {
+    expect(parseExpense('比赛得了第3名奖金')).toBeNull()
+  })
+  test('防护：房间38度好热 → null（温度非金额）', () => {
+    expect(parseExpense('房间38度好热')).toBeNull()
+  })
+  test('防护：离终点还有2公里 → null', () => {
+    expect(parseExpense('离终点还有2公里')).toBeNull()
+  })
+  test('防护：我身高180 → null（裸数字无单位/动作）', () => {
+    expect(parseExpense('我身高180')).toBeNull()
+  })
+  test('防护：第38名 → null', () => {
+    expect(parseExpense('我排第38名')).toBeNull()
+  })
+  test('防护：奖金500（无单位）→ null（保守：漏记优先于误记，用户可补"元"）', () => {
+    // 行为说明：去掉裸数字第三式后，"奖金500"无单位词不抽金额→null。
+    // 这是有意保守设计：误记比漏记更糟，用户说"奖金500元"即可正常记。
+    expect(parseExpense('奖金500')).toBeNull()
+  })
+})
+
 describe('记账端到端链路（T3）', () => {
   test('"午饭花了38块" → 解析 → add 成功落库', async () => {
     const parsed = parseExpense('午饭花了38块')
