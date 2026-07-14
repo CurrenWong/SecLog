@@ -72,7 +72,7 @@ Page({
       }).then((del) => {
         if (del.result && del.result.success) {
           const sign = last.amount < 0 ? '-' : '+';
-          self.appendUndoMsg(`🗑️ 已撤回：<b>${last.category}</b> ${sign}¥${Math.abs(last.amount)}`);
+          self.appendUndoMsg(`🗑️ 已撤回：**${last.category}** ${sign}¥${Math.abs(last.amount)}`);
           wx.showToast({ title: '已撤回', icon: 'success' });
         } else {
           wx.showToast({ title: '撤回失败', icon: 'none' });
@@ -159,9 +159,10 @@ Page({
         // 确认消息归一为前端代码插入（唯一来源），避免与模型回复重复：
         // - 正则（确定值）：直接确认
         // - 模型降级（模糊值）：带"大概/对吗"让用户核实
+        // 用 markdown **粗体** 而非 <b> 标签（markdownPreview 走 wd-markdown，<b> 会被当字面量）
         const confirm = source === 'model'
-          ? `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${notePart}（大概的，对吗？）`
-          : `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${notePart}`;
+          ? `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}（大概的，对吗？）`
+          : `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}`;
         // 在对话流里追加【唯一】记账确认（模型侧已被 systemPrompt 指示不再重复确认）
         const comp = self.selectComponent('#agentui');
         if (comp && comp.appendAssistantMessage) {

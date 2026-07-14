@@ -11,8 +11,8 @@ function buildConfirm(parsed, source) {
   const sign = parsed.amount < 0 ? '-' : '+'
   const notePart = parsed.note ? `（${parsed.note}）` : ''
   return source === 'model'
-    ? `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${notePart}（大概的，对吗？）`
-    : `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${notePart}`
+    ? `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}（大概的，对吗？）`
+    : `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}`
 }
 
 const FUNC = require('../../cloudfunctions/miaojiRecord/index.js')
@@ -42,7 +42,7 @@ describe('chatBot 确认消息归一（按建议修改后）', () => {
     const r = await tryRecord('午饭花了38块', async () => '{"amount":0}', { OPENID: 'u' })
     expect(r.recorded).toBe(true)
     expect(r.source).toBe('regex')
-    expect(r.confirm).toBe('✅ 已记：<b>餐饮</b> -¥38（午饭花了）')
+    expect(r.confirm).toBe('✅ 已记：**餐饮** -¥38（午饭花了）')
     expect(r.confirm).not.toContain('大概')
     expect(r.confirm).not.toContain('对吗')
   })
