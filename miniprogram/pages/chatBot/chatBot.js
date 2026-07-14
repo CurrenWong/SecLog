@@ -27,8 +27,10 @@ Page({
       logo: "",
       welcomeMsg: "你好，我是秒记 💡 说出你的消费，我来帮你记。例如：午饭花了38块",
     },
-    // 系统提示词：让直连大模型具备"秒记记账助手"人设，避免对消费语句展开冗余分析
-    systemPrompt: "你是秒记，一款AI记账助手。规则：1) 当用户说出一笔消费或收入（如'午饭38''打车45''收到工资8000'），你只需用一句话简短确认已记下，不要展开分析、不要反问、不要给建议；2) 若用户只是闲聊或提问，正常简洁回答；3) 始终用中文，口语化，不超过两句话。",
+    // 系统提示词：让直连大模型具备"秒记记账助手"人设
+    // 关键：记账确认由前端代码统一插入（✅ 已记...），模型【不要】重复确认或复述金额，
+    // 只在需要时自然接一句话（如补充提醒），避免对话里出现两条确认。
+    systemPrompt: "你是秒记，一款AI记账助手。规则：1) 当用户说出一笔消费或收入，秒记会自动记账并在对话里插入一条✅已记的确认，你【不要】再重复确认、不要复述金额，只需自然接一句话（如'好的~'或相关小提醒），不超过两句；2) 若用户只是闲聊或提问，正常简洁回答；3) 始终用中文，口语化。",
     envShareConfig: null,
   },
 
@@ -67,14 +69,17 @@ Page({
     return text
   },
 
-  // 解析消费文本并记账。混合策略：正则优先，模型兜底。
+  // 解析消费文本并记账。混合策略：正则优先（确定），模型兜底（模糊）。
+  // source 记录来源：regex=确定值直接确认；model=模糊值带核实语气。
   async tryRecord(text) {
     if (!text) return;
     let parsed = parseExpense(text) // 正则（快/免费/确定）
+    let source = parsed ? 'regex' : null
     if (!parsed) {
       // 正则完全抽不到 → 降级调大模型
       try {
         parsed = await extractByModel(text, (prompt) => this.callModelForExtract(prompt))
+        if (parsed) source = 'model'
       } catch (e) {
         parsed = null
       }
@@ -95,11 +100,17 @@ Page({
     }).then((res) => {
       if (res.result && res.result.success) {
         const sign = parsed.amount < 0 ? '-' : '+';
-        const msg = `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${parsed.note ? '（' + parsed.note + '）' : ''}`;
-        // 在对话流里追加记账确认
+        const notePart = parsed.note ? `（${parsed.note}）` : '';
+        // 确认消息归一为前端代码插入（唯一来源），避免与模型回复重复：
+        // - 正则（确定值）：直接确认
+        // - 模型降级（模糊值）：带"大概/对吗"让用户核实
+        const confirm = source === 'model'
+          ? `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${notePart}（大概的，对吗？）`
+          : `✅ 已记：<b>${parsed.category}</b> ${sign}¥${Math.abs(parsed.amount)}${notePart}`;
+        // 在对话流里追加【唯一】记账确认（模型侧已被 systemPrompt 指示不再重复确认）
         const comp = self.selectComponent('#agentui');
         if (comp && comp.appendAssistantMessage) {
-          comp.appendAssistantMessage(msg);
+          comp.appendAssistantMessage(confirm);
         }
         wx.showToast({ title: '记账成功', icon: 'success' });
       } else {
