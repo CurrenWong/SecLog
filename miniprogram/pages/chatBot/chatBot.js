@@ -300,7 +300,13 @@ Page({
     const income = result.incomeTotal || 0
     const net = result.net || 0
     const count = result.count || 0
-    if (count === 0) return '📊 这个月还没记账呢，说一笔我帮你记上~'
+    if (count === 0) {
+      // 临时调试：把实际查询条件打到对话里，便于在开发者工具定位为什么是 0
+      const d = result._debug
+      let dbg = '\n[debug] '
+      if (d) dbg += 'owner=' + d.owner + ' start=' + d.startISO + ' rows=' + d.rows
+      return '📊 这个月还没记账呢，说一笔我帮你记上~' + dbg
+    }
     let s = '📊 这个月你一共花了 ' + fmt(expense)
     if (income > 0) s += '，收入 ' + fmt(income) + '，净 ' + (net < 0 ? '-' : '+') + fmt(net)
     const cats = result.byCategory || []

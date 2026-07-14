@@ -188,6 +188,12 @@ exports.main = async (event, context) => {
           net: incomeTotal + expenseTotal, // 支出为负，收入为正 → 净 = 收入 + 支出
           count: rows.length,
           byCategory: categories,
+          _debug: {
+            owner: owner ? owner.openid : null,
+            startISO: start.toISOString(),
+            rows: rows.length,
+            nowISO: new Date().toISOString(),
+          },
         }
       }
 
