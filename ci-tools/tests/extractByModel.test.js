@@ -74,6 +74,18 @@ describe('classifyIntent 统一意图路由', () => {
     expect(r).toEqual({ action: 'query', query: { type: 'category', category: '餐饮' } })
   })
 
+  test('query: 按分类统计（breakdown，不带 category）', async () => {
+    const callModel = fakeCallModel('{"action":"query","query":{"type":"breakdown"}}')
+    const r = await classifyIntent('按分类统计支出', callModel)
+    expect(r).toEqual({ action: 'query', query: { type: 'breakdown' } })
+  })
+
+  test('query: 各类花了多少 → breakdown', async () => {
+    const callModel = fakeCallModel('{"action":"query","query":{"type":"breakdown"}}')
+    const r = await classifyIntent('各类花了多少', callModel)
+    expect(r.query.type).toBe('breakdown')
+  })
+
   test('query: 未知 type 兜底为 month', async () => {
     const callModel = fakeCallModel('{"action":"query","query":{"type":"xxx"}}')
     const r = await classifyIntent('花了多少', callModel)

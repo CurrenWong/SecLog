@@ -148,6 +148,22 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(appendMock).toHaveBeenCalled() // 📊 模板回复出现
     expect(appendMock.mock.calls[0][0]).toContain('📊')
   })
+
+  test('按分类统计 → 模型判 breakdown → tryQuery 走 stats（全部分类，不报错）', async () => {
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"action":"query","query":{"type":"breakdown"}}')
+    await send(inst, '按分类统计支出')
+    await sleep()
+
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).toContain('stats')
+    expect(actions).not.toContain('add')
+    expect(appendMock).toHaveBeenCalled()
+    // 列出全部分类，不误报"没记过 XX"
+    const msg = appendMock.mock.calls[0][0]
+    expect(msg).toContain('按分类统计')
+    expect(msg).not.toContain('还没记过')
+  })
 })
 
 describe('B2 失败路径（callFunction reject / 模型降级失败）', () => {
@@ -278,5 +294,41 @@ describe('查询回复 buildQueryReply（真实明细，不依赖模型编造）
     const q = { type: 'month', month: 'this' }
     const result = { success: true, expenseTotal: 0, incomeTotal: 0, net: 0, count: 0, byCategory: [], records: [] }
     expect(inst.buildQueryReply(q, result)).toContain('这个月还没记账呢')
+  })
+
+  test('breakdown 分支：列出所有分类支出（不误报"没记过其他"）', () => {
+    const inst = makeInst()
+    const q = { type: 'breakdown' }
+    const result = {
+      success: true,
+      expenseTotal: -580,
+      byCategory: [
+        { category: '餐饮', amount: -200, count: 3 },
+        { category: '交通', amount: -360, count: 2 },
+        { category: '其他', amount: -20, count: 1 },
+      ],
+      count: 6,
+    }
+    const msg = inst.buildQueryReply(q, result)
+    expect(msg).toContain('按分类统计')
+    expect(msg).toContain('餐饮')
+    expect(msg).toContain('交通')
+    expect(msg).toContain('其他') // 即使金额小也列出，不报"没记过"
+    expect(msg).not.toContain('还没记过') // 修复前对 0 分类说"没记过"的回归锁
+  })
+
+  test('breakdown 分支：某分类金额为 0 也列出（不漏）', () => {
+    const inst = makeInst()
+    const q = { type: 'breakdown' }
+    const result = {
+      success: true,
+      expenseTotal: -200,
+      byCategory: [{ category: '餐饮', amount: -200, count: 2 }, { category: '其他', amount: 0, count: 0 }],
+      count: 2,
+    }
+    const msg = inst.buildQueryReply(q, result)
+    expect(msg).toContain('餐饮')
+    expect(msg).toContain('其他')
+    expect(msg).not.toContain('还没记过「其他」')
   })
 })

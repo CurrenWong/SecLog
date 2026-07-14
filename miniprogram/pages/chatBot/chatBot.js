@@ -290,6 +290,10 @@ Page({
     } else if (q.type === 'category') {
       action = 'stats'
       payload = { category: q.category }
+    } else if (q.type === 'breakdown') {
+      // 按分类统计：查全部分类聚合（云函数 stats 不传 category 即返回 byCategory）
+      action = 'stats'
+      payload = {}
     } else {
       // month
       action = 'stats'
@@ -331,6 +335,13 @@ Page({
         return (i + 1) + '. ' + cat + ' ' + sign + fmt(r.amount) + (r.note ? '（' + r.note + '）' : '')
       })
       return '📊 最近记的 ' + list.length + ' 笔：\n' + lines.join('\n')
+    }
+    if (q.type === 'breakdown') {
+      // 按分类统计支出：列出所有有支出的分类及金额（来自云函数 byCategory）
+      const cats = result.byCategory || []
+      if (!cats.length) return '📊 这个月还没记账呢，说一笔我帮你记上~'
+      const lines = cats.map((c) => '· ' + c.category + ' ' + fmt(c.amount) + '（' + (c.count || 0) + ' 笔）')
+      return '📊 这个月按分类统计（支出）：\n' + lines.join('\n')
     }
     if (q.type === 'category') {
       const amount = result.amount || 0
