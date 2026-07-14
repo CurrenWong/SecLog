@@ -122,61 +122,108 @@ Page({
   // 正则判断不出 → 必须让大模型判断意图：抽到则记（模糊值带核实语气），
   // 模型确认非记账(intent:false) → 交给对话变闲聊，两层都失败则保守不记。
   // source 记录来源：regex=确定值直接确认；model=模糊值带核实语气。
+  // 混合策略（新）：正则做第一遍快速抽取 → 结果作为线索喂给模型，模型最终拍板。
+  // 模型返回统一结构 { action: 'add'|'correct'|'none', ... }，前端按 action 分支处理。
   async tryRecord(text) {
     if (!text) return;
-    let parsed = parseExpense(text) // 正则（快/免费/确定）
-    let source = parsed ? 'regex' : null
-    if (!parsed) {
-      // 正则完全抽不到 → 降级调大模型做意图判断 + 抽取
-      try {
-        const modelRes = await extractByModel(text, (prompt) => this.callModelForExtract(prompt))
-        if (modelRes && modelRes.intent === false) {
-          // 模型明确判断：这不是记账意图 → 交给 agent-ui 模型对话（闲聊），不记账、不插卡片
-          return
-        }
-        if (modelRes) { parsed = modelRes; source = 'model' }
-      } catch (e) {
-        parsed = null
-      }
+    // 第一遍：正则快速抽取（作为线索喂给模型，不再独裁）
+    const regexHint = parseExpense(text)
+    // 第二遍：调大模型，结合正则线索 + 最近一笔上下文，最终拍板
+    let decision
+    try {
+      const recent = await this.getLastRecord()
+      decision = await extractByModel(
+        text,
+        (prompt) => this.callModelForExtract(prompt),
+        { regexHint, recentRecord: recent }
+      )
+    } catch (e) {
+      decision = null
     }
-    if (!parsed) return; // 两层都没抽到，不记账（交给模型正常对话回复）
+    if (!decision || decision.action === 'none') return; // 非记账意图 → 交给模型正常对话
 
-    const self = this;
+    if (decision.action === 'correct') {
+      this.tryCorrect(decision, regexHint)
+      return
+    }
+    // action === 'add'
+    this.doAdd(decision, regexHint ? 'regex' : 'model')
+  },
+
+  // 查最近一笔记账（limit=1），返回 { _id, amount, category, note } 或 null
+  getLastRecord() {
+    return new Promise((resolve) => {
+      wx.cloud.callFunction({
+        name: 'miaojiRecord',
+        data: { action: 'list', payload: { limit: 1 } },
+      }).then((res) => {
+        const list = (res.result && res.result.success && res.result.list) || []
+        if (!list.length) return resolve(null)
+        const r = list[0]
+        resolve({ _id: r._id, amount: r.amount, category: r.category, note: r.note })
+      }).catch(() => resolve(null))
+    })
+  },
+
+  // 记一笔新账。source: 'regex'=正则抽到确定值；'model'=模型兜底（模糊值带引导）
+  doAdd(decision, source) {
+    const self = this
+    const { amount, category, note } = decision
     wx.cloud.callFunction({
       name: 'miaojiRecord',
-      data: {
-        action: 'add',
-        payload: {
-          amount: parsed.amount,
-          category: parsed.category,
-          note: parsed.note,
-        },
-      },
+      data: { action: 'add', payload: { amount, category, note } },
     }).then((res) => {
       if (res.result && res.result.success) {
-        const sign = parsed.amount < 0 ? '-' : '+';
-        const notePart = parsed.note ? `（${parsed.note}）` : '';
-        // 确认消息归一为前端代码插入（唯一来源），避免与模型回复重复：
-        // - 正则（确定值）：直接确认，不啰嗦
-        // - 模型降级（模糊值）：简洁确认 + 一句自然引导（数额不对随时改）
-        // 不再用"大概的，对吗？"模板话术（用户自己说的模糊数无需再问）
-        // 用 markdown **粗体** 而非 <b> 标签（markdownPreview 走 wd-markdown，<b> 会被当字面量）
+        const sign = amount < 0 ? '-' : '+'
+        const notePart = note ? '（' + note + '）' : ''
         const confirm = source === 'model'
-          ? `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}，数额不对随时跟我说改~`
-          : `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}`;
-        // 在对话流里追加【唯一】记账确认（模型侧已被 systemPrompt 指示不再重复确认）
-        const comp = self.selectComponent('#agentui');
-        if (comp && comp.appendAssistantMessage) {
-          comp.appendAssistantMessage(confirm);
-        }
-        wx.showToast({ title: '记账成功', icon: 'success' });
+          ? '✅ 已记：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart + '，数额不对随时跟我说改~'
+          : '✅ 已记：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
+        const comp = self.selectComponent('#agentui')
+        if (comp && comp.appendAssistantMessage) comp.appendAssistantMessage(confirm)
+        wx.showToast({ title: '记账成功', icon: 'success' })
       } else {
-        wx.showToast({ title: '记账失败', icon: 'none' });
+        wx.showToast({ title: '记账失败', icon: 'none' })
       }
     }).catch((err) => {
-      console.error('miaojiRecord add failed', err);
-      wx.showToast({ title: '记账出错', icon: 'none' });
-    });
+      console.error('miaojiRecord add failed', err)
+      wx.showToast({ title: '记账出错', icon: 'none' })
+    })
+  },
+
+  // 更正最近一笔（用户说"错了/改成X"等）。decision: { amount, category, note, target }
+  tryCorrect(decision, regexHint) {
+    const self = this
+    const { amount, category, note } = decision
+    this.getLastRecord().then((last) => {
+      if (!last) {
+        // 没有可更正的记录 → 退化为新记一笔（更友好）
+        self.doAdd({ amount, category, note }, regexHint ? 'regex' : 'model')
+        return
+      }
+      wx.cloud.callFunction({
+        name: 'miaojiRecord',
+        data: {
+          action: 'update',
+          payload: { _id: last._id, amount, category, note },
+        },
+      }).then((res) => {
+        if (res.result && res.result.success) {
+          const sign = amount < 0 ? '-' : '+'
+          const notePart = note ? '（' + note + '）' : ''
+          const comp = self.selectComponent('#agentui')
+          if (comp && comp.appendAssistantMessage) {
+            comp.appendAssistantMessage('✅ 已更正：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart)
+          }
+          wx.showToast({ title: '已更正', icon: 'success' })
+        } else {
+          wx.showToast({ title: '更正失败', icon: 'none' })
+        }
+      }).catch((err) => {
+        console.error('miaojiRecord update failed', err)
+        wx.showToast({ title: '更正出错', icon: 'none' })
+      })
+    })
   },
 
   // parseExpense 已抽到 utils/parseExpense.js（便于复用与单元测试）

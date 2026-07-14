@@ -43,6 +43,16 @@ function makeQuery() {
       }
       return { stats: { removed: before - store.length } }
     },
+    async update({ data }) {
+      let rows = store.slice()
+      for (const w of state.wheres) rows = rows.filter((r) => matchWhere(r, w))
+      let updated = 0
+      for (const r of rows) {
+        Object.assign(r, data) // 只更新传入字段
+        updated++
+      }
+      return { stats: { updated } }
+    },
   }
   return q
 }
@@ -61,6 +71,7 @@ const db = {
       limit(n) { return makeQuery().limit(n) },
       get() { return makeQuery().get() },
       remove() { return makeQuery().remove() },
+      update({ data }) { return makeQuery().update({ data }) },
     }
   },
   // 模拟云函数 db.serverDate()：返回递增时间戳（seq 在模块级），

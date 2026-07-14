@@ -5,10 +5,9 @@
 // 验证：
 //   1) 对话流出现 ✅ 确认卡片（selectComponent('#agentui').appendAssistantMessage 收到正确文案）
 //   2) 记账云函数被调用（wx.cloud.callFunction add）
-//   3) 确定值不调大模型（callModelForExtract 未被触发）
-//   4) 失败 / 撤回 分支行为正确
+//   3) 失败 / 撤回 / 更正 分支行为正确
 //
-// 这是比纯逻辑测（chatBot.test.js 复刻）更进一层的「页面实例集成」验证，用的是未改动的源码。
+// 新架构：tryRecord 总是先 getLastRecord(list) 供模型判断更正，再调模型最终拍板（add/correct/none）。
 
 // 注入前端全局 wx（测试环境无真实 wx）
 const callFunctionMock = jest.fn()
@@ -41,6 +40,7 @@ function makeInst() {
 
 const sleep = (ms = 20) => new Promise((r) => setTimeout(r, ms))
 
+// 默认：callFunction 正常返回（add/list/delete 都成功）
 beforeEach(() => {
   callFunctionMock.mockReset()
   appendMock.mockReset()
@@ -49,17 +49,23 @@ beforeEach(() => {
     if (name === 'miaojiRecord' && data.action === 'add') return Promise.resolve({ result: { success: true } })
     if (name === 'miaojiRecord' && data.action === 'list') return Promise.resolve({ result: { success: true, list: [{ _id: 'x1', amount: -38, category: '餐饮' }] } })
     if (name === 'miaojiRecord' && data.action === 'delete') return Promise.resolve({ result: { success: true, removed: 1 } })
+    if (name === 'miaojiRecord' && data.action === 'update') return Promise.resolve({ result: { success: true, updated: 1 } })
     return Promise.resolve({ result: { success: false } })
   })
 })
 
+// 默认模型回复：add 确认（测试可覆盖）
+function defaultModelSpy(inst, returnText = '{"action":"add","amount":-38,"category":"餐饮","note":"午饭"}') {
+  return jest.spyOn(inst, 'callModelForExtract').mockResolvedValue(returnText)
+}
+
 describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', () => {
-  test('确定值"午饭38块" → appendAssistantMessage 收到 ✅ 确认，云函数 add 被调，未调模型', async () => {
+  test('确定值"午饭38块" → appendAssistantMessage 收到 ✅ 确认，云函数 add 被调，模型做最终拍板', async () => {
     const inst = makeInst()
-    const modelSpy = jest.spyOn(inst, 'callModelForExtract')
+    const modelSpy = defaultModelSpy(inst)
 
     await inst.tryRecord('午饭38块')
-    await new Promise((r) => setTimeout(r, 20)) // 等 callFunction.then 异步完成
+    await sleep()
 
     // 对话流出现唯一确认卡片
     expect(appendMock).toHaveBeenCalledTimes(1)
@@ -73,18 +79,20 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(callFunctionMock).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'miaojiRecord', data: expect.objectContaining({ action: 'add' }) })
     )
-    // 确定值走正则，未降级调模型
-    expect(modelSpy).not.toHaveBeenCalled()
+    // 新架构：即使确定值也调模型做最终拍板（正则结果作为线索）
+    expect(modelSpy).toHaveBeenCalled()
   })
 
   test('云函数 add 失败 → 不追加确认卡片，toast 失败', async () => {
     callFunctionMock.mockImplementation(({ name, data }) => {
       if (name === 'miaojiRecord' && data.action === 'add') return Promise.resolve({ result: { success: false } })
+      if (name === 'miaojiRecord' && data.action === 'list') return Promise.resolve({ result: { success: true, list: [] } })
       return Promise.resolve({ result: { success: false } })
     })
     const inst = makeInst()
+    defaultModelSpy(inst)
     await inst.tryRecord('打车45')
-    await new Promise((r) => setTimeout(r, 20))
+    await sleep()
 
     expect(appendMock).not.toHaveBeenCalled() // 失败不插确认
     expect(global.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '记账失败' }))
@@ -92,8 +100,8 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
 
   test('onUserSend 先判撤回意图 → 走 tryUndo 而非 tryRecord', async () => {
     const inst = makeInst()
-    inst.onUserSend({ detail: { content: '记错了' } })
-    await new Promise((r) => setTimeout(r, 20))
+    inst.onUserSend({ detail: { content: '撤回' } })
+    await sleep()
 
     // 撤回确认卡片出现
     expect(appendMock).toHaveBeenCalled()
@@ -108,8 +116,9 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
 
   test('onUserSend 消费意图 → 走 tryRecord（记账）', async () => {
     const inst = makeInst()
+    defaultModelSpy(inst)
     inst.onUserSend({ detail: { content: '午饭38块' } })
-    await new Promise((r) => setTimeout(r, 20))
+    await sleep()
 
     const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
     expect(actions).toContain('add')
@@ -118,12 +127,11 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
   })
 })
 
-// B2: 失败路径（网络/传输层 reject，区别于业务层 success:false）
-// 核心断言：失败时【绝不】插入确认卡片（不能假装成功），并弹对应错误 toast。
 describe('B2 失败路径（callFunction reject / 模型降级失败）', () => {
   test('tryRecord: 网络超时 reject → 不插卡片 + toast「记账出错」', async () => {
     callFunctionMock.mockImplementation(() => Promise.reject(new Error('network timeout')))
     const inst = makeInst()
+    defaultModelSpy(inst)
     await inst.tryRecord('午饭38块')
     await sleep()
 
@@ -137,7 +145,7 @@ describe('B2 失败路径（callFunction reject / 模型降级失败）', () => 
       return Promise.resolve({ result: { success: true } })
     })
     const inst = makeInst()
-    inst.onUserSend({ detail: { content: '记错了' } })
+    inst.onUserSend({ detail: { content: '撤回' } })
     await sleep()
 
     expect(appendMock).not.toHaveBeenCalled()
@@ -151,7 +159,7 @@ describe('B2 失败路径（callFunction reject / 模型降级失败）', () => 
       return Promise.resolve({ result: { success: true } })
     })
     const inst = makeInst()
-    inst.onUserSend({ detail: { content: '记错了' } })
+    inst.onUserSend({ detail: { content: '撤回' } })
     await sleep()
 
     expect(global.wx.showToast).toHaveBeenCalledWith(expect.objectContaining({ title: '撤回出错' }))
@@ -159,29 +167,55 @@ describe('B2 失败路径（callFunction reject / 模型降级失败）', () => 
   })
 
   test('tryRecord: 正则 null + 模型降级失败 → 静默不记账（无卡片、无 toast）', async () => {
-    // 模拟：正则抽不到（模糊闲聊），大模型通道也失败 → parsed 变 null → 不记账
+    // 模拟：正则抽不到（模糊闲聊），大模型通道也失败 → decision 变 null → 不记账
     const inst = makeInst()
     jest.spyOn(inst, 'callModelForExtract').mockRejectedValue(new Error('model net'))
 
     await inst.tryRecord('嗯那个啥') // 无消费意图词 → 正则 null → 走模型 → 失败
     await sleep()
 
-    expect(callFunctionMock).not.toHaveBeenCalled() // 没尝试记账云函数
+    // getLastRecord 的 list 调用可能成功，但不应有 add
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).not.toContain('add') // 没尝试记账云函数
     expect(appendMock).not.toHaveBeenCalled() // 没确认卡片
-    // 注意：不应弹「记账出错」——用户只是说了句模糊话，应交给模型正常对话，而非报错刷屏
+    // 不应弹「记账出错」——用户只是说了句模糊话，应交给模型正常对话，而非报错刷屏
     expect(global.wx.showToast).not.toHaveBeenCalled()
   })
 
-  test('tryRecord: 正则 null + 模型确认非记账(intent:false) → 不记、不插卡片（交给对话）', async () => {
-    // 正则抽不到，调模型 → 模型返回 {amount:0}（extractByModel 转成 {intent:false}）
+  test('tryRecord: 正则 null + 模型确认非记账(none) → 不记、不插卡片（交给对话）', async () => {
+    // 正则抽不到，调模型 → 模型返回 {action:"none"}
     // 真实 tryRecord 应明确 return，不记账、不插卡片，由 agent-ui 模型对话接管（闲聊）
     const inst = makeInst()
-    jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"amount":0}')
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"action":"none"}')
 
-    await inst.tryRecord('今天天气不错') // 正则 null → 模型 → intent:false
+    await inst.tryRecord('今天天气不错') // 正则 null → 模型 → none
     await sleep()
 
-    expect(callFunctionMock).not.toHaveBeenCalled() // 没尝试记账
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).not.toContain('add') // 没尝试记账
     expect(appendMock).not.toHaveBeenCalled() // 没确认卡片（区分于"记成功"）
+  })
+})
+
+describe('更正流程（correct 意图 → update 最近一笔）', () => {
+  test('"想起来错了，是60" → update 被调，不新增 add', async () => {
+    // getLastRecord 返回一笔火锅 -50
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'list') return Promise.resolve({ result: { success: true, list: [{ _id: 'last1', amount: -50, category: '餐饮', note: '火锅' }] } })
+      if (name === 'miaojiRecord' && data.action === 'add') return Promise.resolve({ result: { success: true } })
+      if (name === 'miaojiRecord' && data.action === 'update') return Promise.resolve({ result: { success: true, updated: 1 } })
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"action":"correct","target":"last","amount":-60,"category":"餐饮","note":"火锅"}')
+
+    await inst.tryRecord('想起来错了，是60')
+    await sleep()
+
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).toContain('update')
+    expect(actions).not.toContain('add') // 更正不是新增
+    expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('✅ 已更正'))
+    expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('-¥60'))
   })
 })

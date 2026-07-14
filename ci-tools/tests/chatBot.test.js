@@ -1,109 +1,128 @@
 // chatBot 记账确认行为测试（mock wx / 云函数 / agent-ui）
-// 验证：确认消息归一为前端插入（唯一来源），正则=确定值直接确认，模型降级=模糊值带核实语气
+// 验证：确认消息归一为前端插入（唯一来源）；
+//   正则结果喂模型做线索，模型最终拍板（add/correct/none）；
+//   确定值 model 不调（省成本），模糊值调模型带引导。
 const cloud = require('wx-server-sdk')
 const { parseExpense, parseUndo } = require('../../miniprogram/utils/parseExpense')
 const { extractByModel } = require('../../miniprogram/utils/extractByModel')
 
-// 直接加载 chatBot 的逻辑函数需要 Page() 环境，这里改为复刻 tryRecord 的确认文案分支，
-// 因为 chatBot.js 依赖 wx/Page 无法在 node 直接 require。
-// 我们把"确认文案生成"抽成可测的纯函数放这里验证（与生产逻辑保持一致）。
-function buildConfirm(parsed, source) {
+// 确认文案生成（与 chatBot.doAdd 生产逻辑保持一致）
+function buildAddConfirm(parsed, source) {
   const sign = parsed.amount < 0 ? '-' : '+'
   const notePart = parsed.note ? `（${parsed.note}）` : ''
   return source === 'model'
     ? `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}，数额不对随时跟我说改~`
     : `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}`
 }
+function buildCorrectConfirm(parsed) {
+  const sign = parsed.amount < 0 ? '-' : '+'
+  const notePart = parsed.note ? `（${parsed.note}）` : ''
+  return `✅ 已更正：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}`
+}
 
 const FUNC = require('../../cloudfunctions/miaojiRecord/index.js')
 beforeEach(() => { cloud.__reset([], { OPENID: undefined }) })
 async function call(action, payload, ctx) { cloud.__setCtx(ctx); return FUNC.main({ action, payload }, {}) }
 
-// 模拟 chatBot.tryRecord 的"确认来源 + 文案"决策（与生产代码同构）
-async function tryRecord(text, callModel, ctx) {
-  let parsed = parseExpense(text)
-  let source = parsed ? 'regex' : null
-  if (!parsed) {
-    const modelRes = await extractByModel(text, callModel)
-    if (modelRes && modelRes.intent === false) {
-      // 模型明确判断：非记账意图 → 交给对话，不记账
-      return { recorded: false, intent: false }
+// 模拟 chatBot.tryRecord 的决策链路（与生产同构：正则做线索 → 模型拍板 → 分支）
+async function tryRecord(text, callModel, ctx, opts = {}) {
+  const regexHint = parseExpense(text)
+  const decision = await extractByModel(text, callModel, { regexHint, recentRecord: opts.recentRecord || null })
+  if (!decision || decision.action === 'none') return { recorded: false, action: decision ? decision.action : null }
+  if (decision.action === 'correct') {
+    // 模拟 tryCorrect：查最近一笔 → update
+    const listRes = await call('list', { limit: 1 }, ctx)
+    const list = (listRes.success && listRes.list) || []
+    if (!list.length) {
+      // 无记录退化为 add
+      const r = await call('add', decision, ctx)
+      return { recorded: true, action: 'add', confirm: buildAddConfirm(decision, regexHint ? 'regex' : 'model'), parsed: decision }
     }
-    if (modelRes) { parsed = modelRes; source = 'model' }
+    const last = list[0]
+    const upd = await call('update', { _id: last._id, ...decision }, ctx)
+    return { recorded: true, action: 'correct', confirm: buildCorrectConfirm(decision), parsed: decision, updated: upd.success }
   }
-  if (!parsed) return { recorded: false }
-  const r = await call('add', parsed, ctx)
+  // add
+  const r = await call('add', decision, ctx)
   if (!r.success) return { recorded: false }
-  return { recorded: true, source, confirm: buildConfirm(parsed, source), parsed }
+  return { recorded: true, action: 'add', source: regexHint ? 'regex' : 'model', confirm: buildAddConfirm(decision, regexHint ? 'regex' : 'model'), parsed: decision }
 }
 
-describe('chatBot 确认消息归一（按建议修改后）', () => {
-  test('正则确定值"午饭花了38块" → 确认不含"大概/对吗"', async () => {
-    const r = await tryRecord('午饭花了38块', async () => '{"amount":0}', { OPENID: 'u' })
+describe('chatBot 确认消息归一（统一意图结构）', () => {
+  test('正则确定值"午饭花了38块" → 正则给线索，模型确认 add，确认不含"大概"', async () => {
+    let modelCalled = false
+    const callModel = async () => { modelCalled = true; return '{"action":"add","amount":-38,"category":"餐饮","note":"午饭花了"}' }
+    const r = await tryRecord('午饭花了38块', callModel, { OPENID: 'u' })
     expect(r.recorded).toBe(true)
+    expect(r.action).toBe('add')
     expect(r.source).toBe('regex')
     expect(r.confirm).toBe('✅ 已记：**餐饮** -¥38（午饭花了）')
     expect(r.confirm).not.toContain('大概')
     expect(r.confirm).not.toContain('对吗')
+    expect(modelCalled).toBe(true) // 新架构：即使确定值也调模型拍板（线索+最终判定）
   })
 
-  test('模型模糊值"中午火锅大概五十多" → 确认带自然引导（数额不对随时改）', async () => {
-    const callModel = async () => '{"amount":-55,"category":"餐饮","note":"和同事吃火锅"}'
+  test('模型模糊值"中午火锅大概五十多" → add + 引导语', async () => {
+    const callModel = async () => '{"action":"add","amount":-55,"category":"餐饮","note":"和同事吃火锅"}'
     const r = await tryRecord('中午跟同事吃了顿火锅大概五十多', callModel, { OPENID: 'u' })
     expect(r.recorded).toBe(true)
+    expect(r.action).toBe('add')
     expect(r.source).toBe('model')
     expect(r.confirm).toContain('数额不对随时跟我说改')
     expect(r.confirm).not.toContain('大概的，对吗？')
   })
 
-  test('两层都抽不到 → 不记账（无确认消息）', async () => {
-    const r = await tryRecord('今天天气不错', async () => '{"amount":0}', { OPENID: 'u' })
+  test('闲聊 → none → 不记账', async () => {
+    const callModel = async () => '{"action":"none"}'
+    const r = await tryRecord('今天天气不错', callModel, { OPENID: 'u' })
     expect(r.recorded).toBe(false)
+    expect(r.action).toBe('none')
   })
 
-  test('正则 null + 模型确认非记账(intent:false) → 不记、intent 信号明确', async () => {
-    // 正则抽不到（闲聊），模型明确判断不是记账 → 交给对话，不插卡片不记账
-    const r = await tryRecord('今天天气不错', async () => '{"amount":0}', { OPENID: 'u' })
-    expect(r.recorded).toBe(false)
-    expect(r.intent).toBe(false) // 显式信号：模型确认非记账，而非"抽取失败"
-  })
-
-  test('正则 null + 模型判定是记账（模糊值）→ 记，带自然引导', async () => {
-    const callModel = async () => '{"amount":-55,"category":"餐饮","note":"火锅"}'
-    const r = await tryRecord('中午跟同事吃了顿火锅大概五十多', callModel, { OPENID: 'u' })
+  test('"想起来错了，是60" → correct → 更新最近一笔（不新增）', async () => {
+    const ctx = { OPENID: 'u_correct' }
+    await call('add', { amount: -50, category: '餐饮', note: '火锅' }, ctx)
+    const recent = { _id: (await call('list', { limit: 1 }, ctx)).list[0]._id, amount: -50, category: '餐饮', note: '火锅' }
+    const callModel = async () => '{"action":"correct","target":"last","amount":-60,"category":"餐饮","note":"火锅"}'
+    const r = await tryRecord('想起来错了，是60', callModel, ctx, { recentRecord: recent })
     expect(r.recorded).toBe(true)
-    expect(r.source).toBe('model')
-    expect(r.confirm).toContain('数额不对随时跟我说改')
+    expect(r.action).toBe('correct')
+    expect(r.confirm).toBe('✅ 已更正：**餐饮** -¥60（火锅）')
+    expect(r.updated).toBe(true)
+    const list = await call('list', { limit: 10 }, ctx)
+    expect(list.list.length).toBe(1) // 仍是 1 笔
+    expect(list.list[0].amount).toBe(-60) // 金额已改
   })
 
-  test('确认消息由前端代码统一生成（source 决定文案，模型回复不重复）', async () => {
-    // 正则命中时模型根本不该被调（省成本/延迟），确认完全来自代码
-    let modelCalled = false
-    const callModel = async () => { modelCalled = true; return '{"amount":0}' }
-    const r = await tryRecord('打车45', callModel, { OPENID: 'u' })
-    expect(r.source).toBe('regex')
-    expect(modelCalled).toBe(false) // 确定值不调模型 → 确认文案 100% 来自代码
+  test('correct 但无记录 → 退化为 add（新记一笔）', async () => {
+    const callModel = async () => '{"action":"correct","target":"last","amount":-60,"category":"餐饮","note":"火锅"}'
+    const r = await tryRecord('想起来错了，是60', callModel, { OPENID: 'u_norecord' })
+    expect(r.recorded).toBe(true)
+    expect(r.action).toBe('add')
   })
 })
 
-describe('parseUndo 撤回意图识别', () => {
+describe('parseUndo 撤回意图识别（仅明确删除动作）', () => {
   test('明确撤回词命中', () => {
-    expect(parseUndo('记错了')).toBe(true)
     expect(parseUndo('撤回')).toBe(true)
     expect(parseUndo('撤销刚才那笔')).toBe(true)
     expect(parseUndo('删掉')).toBe(true)
-    expect(parseUndo('不对，记反了')).toBe(true)
+    expect(parseUndo('删除这笔')).toBe(true)
+    expect(parseUndo('取消记录')).toBe(true)
+  })
+  test('"错了/不对"不再命中（交给模型判 correct）', () => {
+    expect(parseUndo('想起来错了')).toBe(false)
+    expect(parseUndo('记的不对')).toBe(false)
+    expect(parseUndo('搞错了')).toBe(false)
   })
   test('非撤回意图不命中', () => {
     expect(parseUndo('午饭花了38')).toBe(false)
     expect(parseUndo('今天天气不错')).toBe(false)
-    expect(parseUndo('收到工资8000')).toBe(false)
   })
 })
 
 describe('撤回端到端（记一笔 → 撤回 → 列表清空）', () => {
   // 复刻 chatBot.tryUndo 的链路（与生产同构：list limit=1 → delete）
-  // 注意：云函数 list 返回 { success, list:[...] }，delete 返回 { success, removed }
   async function tryUndo(ctx) {
     const listRes = await call('list', { limit: 1 }, ctx)
     const list = (listRes.success && listRes.list) || []
@@ -115,17 +134,13 @@ describe('撤回端到端（记一笔 → 撤回 → 列表清空）', () => {
 
   test('记一笔后撤回 → 列表为空', async () => {
     const ctx = { OPENID: 'u_undo' }
-    // 先记一笔
     const add = await call('add', { amount: -38, category: '餐饮', note: '午饭' }, ctx)
     expect(add.success).toBe(true)
-    // 确认有 1 笔
     let lst = await call('list', { limit: 10 }, ctx)
     expect(lst.list.length).toBe(1)
-    // 撤回
     const r = await tryUndo(ctx)
     expect(r.undone).toBe(true)
     expect(r.last.category).toBe('餐饮')
-    // 列表清空
     lst = await call('list', { limit: 10 }, ctx)
     expect(lst.list.length).toBe(0)
   })
@@ -142,7 +157,6 @@ describe('撤回端到端（记一笔 → 撤回 → 列表清空）', () => {
     const b = { OPENID: 'uB' }
     await call('add', { amount: -10, category: '餐饮', note: 'A的' }, a)
     await call('add', { amount: -20, category: '交通', note: 'B的' }, b)
-    // A 撤回 → 只删 A 的，B 的还在
     const r = await tryUndo(a)
     expect(r.undone).toBe(true)
     expect(r.last.note).toBe('A的')

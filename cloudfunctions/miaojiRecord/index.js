@@ -66,6 +66,29 @@ exports.main = async (event, context) => {
         return { success: true, removed: res.stats.removed }
       }
 
+      // 更正 / 修改一笔（amount / category / note / type）
+      case 'update': {
+        const { _id, amount, category, note, type } = payload || {}
+        if (!_id) {
+          return { success: false, code: 'MISSING_ID', message: '缺少 _id' }
+        }
+        // 只更新传入的字段，避免整条覆盖
+        const set = {}
+        if (typeof amount === 'number' && !isNaN(amount)) {
+          set.amount = Number(amount)
+          set.type = type || (amount < 0 ? 'expense' : 'income')
+        }
+        if (typeof category === 'string' && category) set.category = category
+        if (typeof note === 'string') set.note = note
+        if (!Object.keys(set).length) {
+          return { success: false, code: 'NOTHING_TO_UPDATE', message: '没有可更新的字段' }
+        }
+        let query = db.collection(COLLECTION).where({ _id })
+        if (owner) query = db.collection(COLLECTION).where(Object.assign({ _id }, owner))
+        const res = await query.update({ data: set })
+        return { success: true, updated: res.stats.updated, _id }
+      }
+
       // 汇总（今日 / 本月）
       case 'summary': {
         const now = new Date()

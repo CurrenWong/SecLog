@@ -64,9 +64,10 @@ function stripAmount(text) {
   return text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20)
 }
 
-// 撤回意图识别：用户想撤销刚才记的一笔。确定性正则（不调模型，即时）。
+// 撤回意图识别：用户想【删除】刚才记的一笔。确定性正则（不调模型，即时）。
+// 只认明确的"删除"动作词；"错了/不对/改"等交给模型判断是「更正」还是「无意图」。
 // 命中返回 true；非撤回意图返回 false。
-const UNDO_RE = /(记错|撤回|撤销|删掉|删除|不对|取消|退了|不要记|别记|搞错|记反)/i
+const UNDO_RE = /(撤回|撤销|删掉|删除|取消记录|不要记了|别记了|退了重记)/i
 function parseUndo(text) {
   if (!text) return false
   return UNDO_RE.test(text)
