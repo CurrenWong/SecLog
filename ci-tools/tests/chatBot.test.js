@@ -3,7 +3,7 @@
 //   正则结果喂模型做线索，模型最终拍板（add/correct/none）；
 //   确定值 model 不调（省成本），模糊值调模型带引导。
 const cloud = require('wx-server-sdk')
-const { parseExpense, parseUndo } = require('../../miniprogram/utils/parseExpense')
+const { parseExpense, parseUndo, parseQuery } = require('../../miniprogram/utils/parseExpense')
 const { extractByModel } = require('../../miniprogram/utils/extractByModel')
 
 // 确认文案生成（与 chatBot.doAdd 生产逻辑保持一致）
@@ -163,5 +163,29 @@ describe('撤回端到端（记一笔 → 撤回 → 列表清空）', () => {
     const bList = await call('list', { limit: 10 }, b)
     expect(bList.list.length).toBe(1)
     expect(bList.list[0].note).toBe('B的')
+  })
+})
+
+describe('parseQuery 统计查询意图识别', () => {
+  test('"这个月花了多少钱" → month', () => {
+    expect(parseQuery('这个月花了多少钱')).toEqual({ type: 'month', month: 'this' })
+  })
+  test('"今天花了多少" → day', () => {
+    expect(parseQuery('今天花了多少')).toEqual({ type: 'day' })
+  })
+  test('"餐饮花了多少" → category 餐饮', () => {
+    expect(parseQuery('餐饮花了多少')).toEqual({ type: 'category', category: '餐饮' })
+  })
+  test('"最近记了啥" → recent', () => {
+    expect(parseQuery('最近记了啥')).toEqual({ type: 'recent' })
+  })
+  test('纯记账语句不是查询（返回 null）', () => {
+    expect(parseQuery('午饭花了38块')).toBeNull()
+  })
+  test('闲聊不是查询（无查询信号词）', () => {
+    expect(parseQuery('今天天气不错')).toBeNull()
+  })
+  test('"火锅花了多少" → category 餐饮（命中火锅关键词）', () => {
+    expect(parseQuery('火锅花了多少')).toEqual({ type: 'category', category: '餐饮' })
   })
 })

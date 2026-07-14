@@ -10,7 +10,11 @@ let seq = 0 // 递增时间戳序号，保证 orderBy('createdAt','desc') 排序
 function matchWhere(row, cond) {
   return Object.keys(cond).every((k) => {
     const v = cond[k]
-    if (v && typeof v === 'object' && v.$gte !== undefined) return row[k] >= v.$gte
+    if (v && typeof v === 'object') {
+      if (v.$gte !== undefined) return row[k] >= v.$gte
+      if (v.$lt !== undefined) return row[k] < v.$lt
+      if (v.$eq !== undefined) return row[k] === v.$eq
+    }
     return row[k] === v
   })
 }
@@ -77,7 +81,7 @@ const db = {
   // 模拟云函数 db.serverDate()：返回递增时间戳（seq 在模块级），
   // 既保证 summary 的 createdAt >= startOfDay 比较成立，又保证 list 倒序稳定
   serverDate() { return new Date(Date.now() + seq++) },
-  command: { gte: (v) => ({ $gte: v }) },
+  command: { gte: (v) => ({ $gte: v }), lt: (v) => ({ $lt: v }), eq: (v) => ({ $eq: v }) },
 }
 
 const cloud = {

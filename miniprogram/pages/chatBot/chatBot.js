@@ -3,7 +3,7 @@
 // 记账逻辑完全在前端：监听 agent-ui 的 userSend 事件拿用户输入，
 // 解析消费信息，调用 miaojiRecord 云函数写入数据库，并在对话里追加记账确认。
 // 混合抽取：正则（parseExpense）命中即记；完全抽不到时降级调大模型（extractByModel）。
-const { parseExpense, parseUndo } = require('../../utils/parseExpense')
+const { parseExpense, parseUndo, parseQuery } = require('../../utils/parseExpense')
 const { extractByModel } = require('../../utils/extractByModel')
 const { collectStreamText } = require('../../utils/collectStreamText')
 
@@ -41,6 +41,12 @@ Page({
     // 先判撤回意图（确定性正则，即时，不调模型）
     if (parseUndo(text)) {
       this.tryUndo(text);
+      return;
+    }
+    // 再判统计查询意图（看汇总/分类/明细，不记账不闲聊）
+    const q = parseQuery(text)
+    if (q) {
+      this.tryQuery(q);
       return;
     }
     this.tryRecord(text);
@@ -224,6 +230,95 @@ Page({
         wx.showToast({ title: '更正出错', icon: 'none' })
       })
     })
+  },
+
+  // 统计查询：用户问"这个月花了多少/餐饮花了多少/最近记了啥"等，前端直接查库回答，不记账不调闲聊模型
+  // q: { type: 'month'|'day'|'category'|'recent', category?, month? }
+  tryQuery(q) {
+    const self = this
+    let action = 'stats'
+    let payload = {}
+    if (q.type === 'day') {
+      // 今日：用 summary 的 day 字段（stats 暂只支持月维度，day 走 summary 更稳）
+      action = 'summary'
+    } else if (q.type === 'recent') {
+      action = 'list'
+      payload = { limit: 8 }
+    } else if (q.type === 'category') {
+      action = 'stats'
+      payload = { category: q.category }
+    } else {
+      // month
+      action = 'stats'
+      payload = { month: q.month || 'this' }
+    }
+
+    wx.cloud.callFunction({
+      name: 'miaojiRecord',
+      data: { action, payload },
+    }).then((res) => {
+      if (!res.result || !res.result.success) {
+        self.appendQueryMsg('😅 查询出错了，稍后再试试')
+        return
+      }
+      const msg = self.buildQueryReply(q, res.result)
+      self.appendQueryMsg(msg)
+    }).catch((err) => {
+      console.error('miaojiRecord query failed', err)
+      self.appendQueryMsg('😅 查询出错了，稍后再试试')
+    })
+  },
+
+  // 构造查询回答（模板，确定不幻觉）
+  buildQueryReply(q, result) {
+    const fmt = (n) => '¥' + Math.abs(n).toFixed(0)
+    if (q.type === 'day') {
+      const d = result.day || { income: 0, expense: 0 }
+      if (d.expense === 0 && d.income === 0) return '📊 今天还没记账呢，说一笔我帮你记上~'
+      let s = '📊 今天：支出 ' + fmt(d.expense)
+      if (d.income > 0) s += '，收入 ' + fmt(d.income)
+      return s
+    }
+    if (q.type === 'recent') {
+      const list = result.list || []
+      if (!list.length) return '📊 还没有任何记录哦，说一笔我帮你记~'
+      const lines = list.slice(0, 8).map((r, i) => {
+        const sign = r.type === 'income' ? '+' : '-'
+        const cat = r.category || '其他'
+        return (i + 1) + '. ' + cat + ' ' + sign + fmt(r.amount) + (r.note ? '（' + r.note + '）' : '')
+      })
+      return '📊 最近记的 ' + list.length + ' 笔：\n' + lines.join('\n')
+    }
+    if (q.type === 'category') {
+      const amount = result.amount || 0
+      const count = result.count || 0
+      if (amount === 0) return '📊 这个月还没记过「' + q.category + '」呢~'
+      return '📊 这个月「' + q.category + '」一共花了 ' + fmt(amount) + '（' + count + ' 笔）'
+    }
+    // month
+    const expense = result.expenseTotal || 0
+    const income = result.incomeTotal || 0
+    const net = result.net || 0
+    const count = result.count || 0
+    if (count === 0) return '📊 这个月还没记账呢，说一笔我帮你记上~'
+    let s = '📊 这个月你一共花了 ' + fmt(expense)
+    if (income > 0) s += '，收入 ' + fmt(income) + '，净 ' + (net < 0 ? '-' : '+') + fmt(net)
+    const cats = result.byCategory || []
+    if (cats.length) {
+      const top = cats.slice(0, 3)
+        .map((c) => c.category + ' ' + fmt(c.amount))
+        .join('、')
+      s += '\n最多的是：' + top
+    }
+    return s
+  },
+
+  // 往对话流追加查询回答（与记账确认同一通道，唯一来源）
+  appendQueryMsg(msg) {
+    const comp = this.selectComponent('#agentui')
+    if (comp && comp.appendAssistantMessage) {
+      comp.appendAssistantMessage(msg)
+    }
   },
 
   // parseExpense 已抽到 utils/parseExpense.js（便于复用与单元测试）

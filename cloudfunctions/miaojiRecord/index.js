@@ -122,6 +122,71 @@ exports.main = async (event, context) => {
         }
       }
 
+      // 统计：按分类汇总（支持指定月份，默认本月）
+      // payload: { month?: '2026-07' | 'this' | 不传(本月), category?: 指定分类 }
+      case 'stats': {
+        const { month, category } = payload || {}
+        // 确定统计起止时间
+        let start, end
+        if (month && month !== 'this') {
+          // month 格式 'YYYY-MM'
+          const [y, m] = month.split('-').map(Number)
+          start = new Date(y, m - 1, 1)
+          end = new Date(y, m, 1) // 下月 1 号 0 点（不含）
+        } else {
+          const now = new Date()
+          start = new Date(now.getFullYear(), now.getMonth(), 1)
+          end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+        }
+
+        const cond = { createdAt: _.gte(start) }
+        if (owner) cond.openid = owner.openid
+        const q = db.collection(COLLECTION).where(cond).where({ createdAt: _.lt(end) })
+        const res = await q.get()
+
+        const rows = res.data
+        // 按分类聚合（只算支出 expense）
+        const byCategory = {}
+        let expenseTotal = 0
+        let incomeTotal = 0
+        for (const r of rows) {
+          if (r.type === 'income') {
+            incomeTotal += r.amount
+          } else {
+            expenseTotal += r.amount
+            const cat = r.category || '其他'
+            byCategory[cat] = (byCategory[cat] || 0) + r.amount
+          }
+        }
+
+        // 若指定了分类，只返回该分类
+        if (category) {
+          const val = byCategory[category] || 0
+          return {
+            success: true,
+            month: month && month !== 'this' ? month : 'this',
+            category,
+            amount: val,
+            count: rows.filter((r) => (r.category || '其他') === category && r.type !== 'income').length,
+          }
+        }
+
+        // 分类排序（绝对值从大到小）
+        const categories = Object.keys(byCategory)
+          .map((c) => ({ category: c, amount: byCategory[c] }))
+          .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+
+        return {
+          success: true,
+          month: month && month !== 'this' ? month : 'this',
+          expenseTotal,
+          incomeTotal,
+          net: incomeTotal + expenseTotal, // 支出为负，收入为正 → 净 = 收入 + 支出
+          count: rows.length,
+          byCategory: categories,
+        }
+      }
+
       default:
         return { success: false, code: 'UNKNOWN_ACTION', message: `未知 action: ${action}` }
     }

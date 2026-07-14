@@ -241,3 +241,45 @@ describe('记账端到端链路（T3）', () => {
     expect(list.list.length).toBe(0)
   })
 })
+
+describe('统计汇总（stats）', () => {
+  const OWNER = 'statsUser'
+
+  test('本月汇总按分类聚合，支出为正、净=收入+支出', async () => {
+    await call('add', { amount: -50, type: 'expense', category: '餐饮', note: '火锅' }, { OPENID: OWNER })
+    await call('add', { amount: -30, type: 'expense', category: '餐饮', note: '午饭' }, { OPENID: OWNER })
+    await call('add', { amount: -20, type: 'expense', category: '交通', note: '打车' }, { OPENID: OWNER })
+    await call('add', { amount: 8000, type: 'income', category: '工资', note: '工资' }, { OPENID: OWNER })
+
+    const r = await call('stats', {}, { OPENID: OWNER })
+    expect(r.success).toBe(true)
+    expect(r.expenseTotal).toBe(-100) // 支出为负，合计 -100
+    expect(r.incomeTotal).toBe(8000)
+    expect(r.net).toBe(7900)
+    expect(r.count).toBe(4)
+    // 分类聚合：餐饮 -80，交通 -20
+    const cats = r.byCategory
+    expect(cats.find((c) => c.category === '餐饮').amount).toBe(-80)
+    expect(cats.find((c) => c.category === '交通').amount).toBe(-20)
+    // 按绝对值排序，餐饮在前
+    expect(cats[0].category).toBe('餐饮')
+  })
+
+  test('指定分类查询只返回该分类金额与笔数', async () => {
+    await call('add', { amount: -50, type: 'expense', category: '餐饮', note: '火锅' }, { OPENID: OWNER })
+    await call('add', { amount: -30, type: 'expense', category: '餐饮', note: '午饭' }, { OPENID: OWNER })
+    await call('add', { amount: -20, type: 'expense', category: '交通', note: '打车' }, { OPENID: OWNER })
+    const r = await call('stats', { category: '餐饮' }, { OPENID: OWNER })
+    expect(r.success).toBe(true)
+    expect(r.category).toBe('餐饮')
+    expect(r.amount).toBe(-80)
+    expect(r.count).toBe(2)
+  })
+
+  test('owner 隔离：别的用户看不到本条目的数据', async () => {
+    const r = await call('stats', {}, { OPENID: 'anotherUser' })
+    expect(r.success).toBe(true)
+    expect(r.count).toBe(0)
+    expect(r.expenseTotal).toBe(0)
+  })
+})

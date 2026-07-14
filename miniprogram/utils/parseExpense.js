@@ -99,4 +99,50 @@ function parseExpense(text) {
   return { amount, category, note: stripAmount(text) }
 }
 
-module.exports = { parseExpense, parseUndo }
+// 统计查询意图识别：用户想看汇总/分类/近期记录，而非记账。
+// 返回 { type: 'month'|'day'|'category'|'recent', category?, month? } 或 null（非查询意图）。
+//
+// type 说明：
+//   month    → 本月/这个月花了多少
+//   day      → 今天花了多少
+//   category → 某分类（餐饮/交通…）花了多少，需带分类词
+//   recent   → 最近记了啥 / 都记了些啥 / 明细
+//
+// month 字段：'YYYY-MM' 指定月份，或 'this'（本月）。目前主要支持 this，预留指定月份。
+const QUERY_RE = /(花了多少|花了|支出|收入|开销|消费|统计|汇总|明细|记了|花销|账单|还剩|剩多少|多少钱)/i
+const TIME_THIS_MONTH = /(这个月|这月|本月|当月|这个月来|月)/i
+const TIME_TODAY = /(今天|今日|当天)/i
+const TIME_RECENT = /(最近|都记了|记了啥|记了些啥|明细|都花了|花了啥|账单)/i
+const CATEGORY_QUERY_MAP = [
+  { keys: ['餐饮', '吃饭', '吃', '午饭', '晚餐', '早餐', '火锅', '奶茶', '咖啡', '餐厅'], cat: '餐饮' },
+  { keys: ['交通', '打车', '地铁', '公交', '油费', '停车', '高铁', '火车', '机票', '滴滴'], cat: '交通' },
+  { keys: ['购物', '买', '衣服', '鞋', '包', '数码', '手机', '电脑', '淘宝', '京东', '超市'], cat: '购物' },
+  { keys: ['居家', '房租', '水电', '物业', '家居', '家具', '日用品'], cat: '居家' },
+  { keys: ['娱乐', '电影', '游戏', 'ktv', '旅游', '玩'], cat: '娱乐' },
+  { keys: ['医疗', '药', '医院', '诊所', '体检'], cat: '医疗' },
+  { keys: ['教育', '书', '课', '培训', '学费'], cat: '教育' },
+]
+
+function parseQuery(text) {
+  if (!text) return null
+  if (!QUERY_RE.test(text)) return null // 没有查询信号词 → 不是查询
+  // 含具体金额数字（如"38块"）→ 是记账语句，不是查询（避免"午饭花了38块"被误判为查餐饮）
+  if (/\d/.test(text)) return null
+
+  // 指定分类？
+  for (const item of CATEGORY_QUERY_MAP) {
+    if (item.keys.some((k) => text.includes(k))) {
+      return { type: 'category', category: item.cat }
+    }
+  }
+  // 今天？
+  if (TIME_TODAY.test(text)) return { type: 'day' }
+  // 最近/明细？
+  if (TIME_RECENT.test(text)) return { type: 'recent' }
+  // 本月（默认）
+  if (TIME_THIS_MONTH.test(text)) return { type: 'month', month: 'this' }
+  // 兜底：含查询词但没命中时间/分类 → 视为本月汇总
+  return { type: 'month', month: 'this' }
+}
+
+module.exports = { parseExpense, parseUndo, parseQuery }
