@@ -11,7 +11,7 @@ function buildConfirm(parsed, source) {
   const sign = parsed.amount < 0 ? '-' : '+'
   const notePart = parsed.note ? `（${parsed.note}）` : ''
   return source === 'model'
-    ? `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}（大概的，对吗？）`
+    ? `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}，数额不对随时跟我说改~`
     : `✅ 已记：**${parsed.category}** ${sign}¥${Math.abs(parsed.amount)}${notePart}`
 }
 
@@ -47,12 +47,13 @@ describe('chatBot 确认消息归一（按建议修改后）', () => {
     expect(r.confirm).not.toContain('对吗')
   })
 
-  test('模型模糊值"中午火锅大概五十多" → 确认带"大概的，对吗？"', async () => {
+  test('模型模糊值"中午火锅大概五十多" → 确认带自然引导（数额不对随时改）', async () => {
     const callModel = async () => '{"amount":-55,"category":"餐饮","note":"和同事吃火锅"}'
     const r = await tryRecord('中午跟同事吃了顿火锅大概五十多', callModel, { OPENID: 'u' })
     expect(r.recorded).toBe(true)
     expect(r.source).toBe('model')
-    expect(r.confirm).toContain('大概的，对吗？')
+    expect(r.confirm).toContain('数额不对随时跟我说改')
+    expect(r.confirm).not.toContain('大概的，对吗？')
   })
 
   test('两层都抽不到 → 不记账（无确认消息）', async () => {
@@ -67,12 +68,12 @@ describe('chatBot 确认消息归一（按建议修改后）', () => {
     expect(r.intent).toBe(false) // 显式信号：模型确认非记账，而非"抽取失败"
   })
 
-  test('正则 null + 模型判定是记账（模糊值）→ 记，带核实语气', async () => {
+  test('正则 null + 模型判定是记账（模糊值）→ 记，带自然引导', async () => {
     const callModel = async () => '{"amount":-55,"category":"餐饮","note":"火锅"}'
     const r = await tryRecord('中午跟同事吃了顿火锅大概五十多', callModel, { OPENID: 'u' })
     expect(r.recorded).toBe(true)
     expect(r.source).toBe('model')
-    expect(r.confirm).toContain('大概的，对吗？')
+    expect(r.confirm).toContain('数额不对随时跟我说改')
   })
 
   test('确认消息由前端代码统一生成（source 决定文案，模型回复不重复）', async () => {
