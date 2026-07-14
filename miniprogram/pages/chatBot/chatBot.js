@@ -5,6 +5,7 @@
 // 混合抽取：正则（parseExpense）命中即记；完全抽不到时降级调大模型（extractByModel）。
 const { parseExpense, parseUndo } = require('../../utils/parseExpense')
 const { extractByModel } = require('../../utils/extractByModel')
+const { collectStreamText } = require('../../utils/collectStreamText')
 
 Page({
   data: {
@@ -94,39 +95,6 @@ Page({
     }
   },
 
-  // 从 streamText 的各种返回结构里统一收集文本（CloudBase AI SDK 不同版本差异大）
-  async _collectStreamText(res) {
-    // 情况1：res 本身就是字符串
-    if (typeof res === 'string') return res
-    // 情况2：res.text 是字符串
-    if (typeof res.text === 'string') return res.text
-    // 情况3：res.text 是 Promise（部分 SDK 版本）
-    if (res && res.text && typeof res.text.then === 'function') {
-      try { return await res.text } catch (e) { /* ignore */ }
-    }
-    // 情况4：异步迭代器（OpenAI 兼容 / 简单格式）
-    if (res && typeof res[Symbol.asyncIterator] === 'function') {
-      let t = ''
-      for await (const chunk of res) {
-        if (!chunk) continue
-        // OpenAI 兼容：{ choices: [{ delta: { content } }] }
-        if (chunk.choices && chunk.choices[0] && chunk.choices[0].delta) {
-          t += chunk.choices[0].delta.content || ''
-        } else if (typeof chunk.delta === 'string') {
-          t += chunk.delta
-        } else if (typeof chunk.text === 'string') {
-          t += chunk.text
-        } else if (typeof chunk.content === 'string') {
-          t += chunk.content
-        } else if (typeof chunk === 'string') {
-          t += chunk
-        }
-      }
-      return t
-    }
-    return ''
-  },
-
   // 调大模型做结构化抽取（复用 CloudBase AI model 通道，与 agent-ui 一致）
   async callModelForExtract(prompt) {
     const { modelProvider, quickResponseModel } = this.data.modelConfig
@@ -139,9 +107,14 @@ Page({
         messages: [{ role: 'user', content: prompt }],
       },
     })
-    const text = await this._collectStreamText(res)
+    const text = await collectStreamText(res)
     // 诊断日志：扫码联调时可在开发者工具 console 看到模型原始返回（后续可删）
-    console.log('[callModelForExtract] raw:', JSON.stringify(text).slice(0, 500))
+    // 同时打出 res 的字段形态，定位真机 streamText 实际返回结构
+    const resKeys = res && typeof res === 'object' ? Object.keys(res) : '(' + typeof res + ')'
+    const hasStreams = res && typeof res === 'object'
+      ? { eventStream: !!(res.eventStream && typeof res.eventStream[Symbol.asyncIterator] === 'function'), textStream: !!(res.textStream && typeof res.textStream[Symbol.asyncIterator] === 'function') }
+      : null
+    console.log('[callModelForExtract] resType:', typeof res, '| resKeys:', JSON.stringify(resKeys), '| hasStreams:', JSON.stringify(hasStreams), '| extractedText:', JSON.stringify(text).slice(0, 300))
     return text
   },
 
