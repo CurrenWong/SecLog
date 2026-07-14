@@ -7,6 +7,12 @@ Component({
       type: String,
       value: "",
     },
+    // 宿主页（如秒记）请求：本次发送不调模型，由宿主页自己生成回复
+    // 用于 record/query/undo 等确定性分支——模型已判意图，不应再自由发声
+    suppressModelReply: {
+      type: Boolean,
+      value: false,
+    },
     systemPrompt: {
       type: String,
       value: "",
@@ -1400,6 +1406,12 @@ Component({
         await this.sendMessage(event.currentTarget.dataset.message);
       }
     },
+    // 宿主页（秒记）调用：请求"本次发送不要调模型"，由宿主页自行生成回复
+    // 用于 record/query/undo 等确定性分支——模型已判意图，不应再自由发声
+    suppressModelOnce() {
+      this.setData({ suppressModelReply: true });
+    },
+
     sendMessage: async function (message) {
       if (this.data.showFileList) {
         this.setData({
@@ -1457,6 +1469,13 @@ Component({
 
       // 新增一轮对话记录时 自动往下滚底
       this.autoToBottom();
+
+      // 宿主页请求抑制本次模型回复（如秒记已确定意图并自行生成回复）→ 只渲染用户气泡，不调模型
+      if (this.data.suppressModelReply) {
+        this.setData({ suppressModelReply: false, chatStatus: 0 });
+        return;
+      }
+
       if (chatMode === "bot") {
         const cloudInstance = await getCloudInstance(this.data.envShareConfig);
         const ai = cloudInstance.extend.AI;

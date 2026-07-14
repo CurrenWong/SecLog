@@ -1,10 +1,16 @@
 // pages/chatBot/chatBot.js
 // 秒记记账对话：chatMode 用 model（直连大模型，忽略 Agent/bot）
-// 记账逻辑完全在前端：监听 agent-ui 的 userSend 事件拿用户输入，
-// 解析消费信息，调用 miaojiRecord 云函数写入数据库，并在对话里追加记账确认。
-// 混合抽取：正则（parseExpense）命中即记；完全抽不到时降级调大模型（extractByModel）。
+//
+// 架构（Curren 2026-07-14 确认）：模型先做意图判断，代码按 action 选分支执行。
+//   用户输入 → classifyIntent（大模型判意图，正则抽线索喂它）→ {action: record|query|undo|chat|correct}
+//     record/correct → 写库 + ✅ 卡片（金额正则保底，模型补抽模糊值）
+//     query          → 查库 + 📊 模板（真实数据，代码生成，绝不幻觉）
+//     undo           → 删最近一笔 + 🗑️ 卡片
+//     chat           → 放行 agent-ui 模型自由对话（唯一模型发声的分支）
+//   关键：模型在一轮里只输出意图 JSON，绝不输出给用户看的散文；
+//        非 chat 分支抑制 agent-ui 模型回复（suppressModelOnce），只显示代码确定性卡片。
 const { parseExpense, parseUndo, parseQuery } = require('../../utils/parseExpense')
-const { extractByModel } = require('../../utils/extractByModel')
+const { classifyIntent } = require('../../utils/extractByModel')
 const { collectStreamText } = require('../../utils/collectStreamText')
 
 Page({
@@ -28,28 +34,104 @@ Page({
       logo: "",
       welcomeMsg: "你好，我是秒记 💡 说出你的消费，我来帮你记。例如：午饭花了38块",
     },
-    // 系统提示词：让直连大模型具备"秒记记账助手"人设
-    // 关键：记账确认由前端代码统一插入（✅ 已记...），模型【不要】重复确认或复述金额，
-    // 只在需要时自然接一句话（如补充提醒），避免对话里出现两条确认。
-    systemPrompt: "你是秒记，一款AI记账助手。规则：1) 当用户说出一笔消费或收入，秒记会自动记账并在对话里插入一条✅已记的确认，你【不要】再重复确认、不要复述金额，只需自然接一句轻松的话（如'好嘞，记上啦~'或'收到，已经帮你记好~'），不超过两句；2) 若用户说'错了/改成X/应该是X'等修正意图，秒记会自动帮你改好，你只需自然轻松地接一句（如'好嘞，已经帮你改成60啦~'或'没问题，改好咯~'），【不要】只回'改好'两个字的生硬短句，也不要复述金额；3) 若用户提问【统计/花了多少/这个月开销/明细/分类汇总】等查询类问题，秒记会自动用【真实数据库】查出结果并插入对话（含准确金额和真实逐笔明细），你【绝对不要】自己算数字、【绝对不要】编造任何金额或明细清单，只回一句极轻量的接话（如'我帮你查一下~'）或不回；4) 若用户只是普通闲聊，正常简洁回答；5) 始终用中文，口语化、亲切、有温度。",
+    // 系统提示词：仅在 chat（闲聊）分支生效——此时 agent-ui 模型自由对话。
+    // record/query/undo/correct 分支模型根本不通过 agent-ui 发声（被 suppress），
+    // 这些分支的回复由前端代码按真实数据生成。所以这里只需把模型当"闲聊伙伴"。
+    systemPrompt: "你是秒记，一款AI记账助手的闲聊模式。当用户只是闲聊或普通提问时，你正常、简洁、亲切地回答，像朋友一样。注意：用户说消费/收入/查询/撤回时，秒记会自动处理，你无需操心。始终用中文，口语化、有温度。",
     envShareConfig: null,
   },
 
   // 用户输入发送时触发（agent-ui 抛出）
-  onUserSend(e) {
+  // 架构：模型先判意图（classifyIntent），代码按 action 选分支。
+  // 时序关键：agent-ui 的 sendMessage 在 triggerEvent 时同步跑 onUserSend，
+  // 但 onUserSend 是 async（classifyIntent 需 await），sendMessage 不会等它。
+  // 故 suppress 必须在【同步段】完成（首个 await 前），用正则快速预判是否非 chat。
+  // 若正则预判为非 chat → 先 suppress（agent-ui 闭嘴），等模型拍板后走确定性分支；
+  // 若模型最终判 chat（罕见误判，如带金额的闲聊）→ 用 callChatModel 补一条模型回复。
+  async onUserSend(e) {
     const text = (e.detail && e.detail.content) || '';
-    // 先判撤回意图（确定性正则，即时，不调模型）
-    if (parseUndo(text)) {
-      this.tryUndo(text);
+    if (!text) return;
+    const comp = this.selectComponent('#agentui');
+
+    // —— 同步段：正则快速预判（仅决定 suppress 与否，不作最终路由）——
+    const regexExpense = parseExpense(text);
+    const queryHint = parseQuery(text);
+    const undoHint = !!parseUndo(text);
+    const likelyNonChat = !!(regexExpense || queryHint || undoHint);
+    if (likelyNonChat && comp && comp.suppressModelOnce) {
+      comp.suppressModelOnce(); // 先闭嘴，等模型拍板
+    }
+
+    // —— 异步段：模型最终判意图（唯一调用大模型做决策的地方）——
+    const recentRecord = await this.getLastRecord();
+    let decision;
+    try {
+      decision = await classifyIntent(
+        text,
+        (prompt) => this.callModelForExtract(prompt),
+        { regexExpense, queryHint, undoHint, recentRecord }
+      );
+    } catch (err) {
+      decision = null;
+    }
+
+    // 模型降级失败：若之前 suppress 了，补一条闲聊模型回复；否则放行（agent-ui 已聊）
+    if (!decision) {
+      if (likelyNonChat) {
+        const reply = await this.callChatModel(text);
+        if (reply) this.appendQueryMsg(reply);
+      }
       return;
     }
-    // 再判统计查询意图（看汇总/分类/明细，不记账不闲聊）
-    const q = parseQuery(text)
-    if (q) {
-      this.tryQuery(q);
+
+    // 模型判 chat：若我们误 suppress 了（带金额的闲聊等），补一条模型回复；否则 agent-ui 已正常聊
+    if (decision.action === 'chat') {
+      if (likelyNonChat) {
+        const reply = await this.callChatModel(text);
+        if (reply) this.appendQueryMsg(reply);
+      }
       return;
     }
-    this.tryRecord(text);
+
+    // 非 chat 分支：已 suppress（likelyNonChat 时），按 action 执行确定性逻辑
+    switch (decision.action) {
+      case 'record':
+        this.doAdd(decision, 'model');
+        break;
+      case 'correct':
+        this.tryCorrect(decision, 'model');
+        break;
+      case 'query':
+        this.tryQuery(decision.query);
+        break;
+      case 'undo':
+        this.tryUndo(text);
+        break;
+    }
+  },
+
+  // 纯闲聊模型回复（用于"正则预判 suppress 但模型判 chat"的补偿）。
+  // 直接调 CloudBase AI 通道拿文本，append 到对话（不依赖 agent-ui 的 sendMessage，避免循环）。
+  async callChatModel(text) {
+    try {
+      const { modelProvider, quickResponseModel } = this.data.modelConfig
+      const cloudInstance = await require('../../utils/cloudInstance').getCloudInstance(this.data.envShareConfig)
+      const ai = cloudInstance.extend.AI
+      const aiModel = ai.createModel(modelProvider)
+      const res = await aiModel.streamText({
+        data: {
+          model: quickResponseModel,
+          messages: [
+            ...(this.data.systemPrompt ? [{ role: 'system', content: this.data.systemPrompt }] : []),
+            { role: 'user', content: text },
+          ],
+        },
+      })
+      const t = await collectStreamText(res)
+      return t && t.trim() ? t.trim() : null
+    } catch (e) {
+      return null
+    }
   },
 
   // 兼容：模型回复结束也可触发（用模型回复兜底解析，但优先用户原话）
@@ -114,46 +196,7 @@ Page({
       },
     })
     const text = await collectStreamText(res)
-    // 诊断日志：扫码联调时可在开发者工具 console 看到模型原始返回（后续可删）
-    // 同时打出 res 的字段形态，定位真机 streamText 实际返回结构
-    const resKeys = res && typeof res === 'object' ? Object.keys(res) : '(' + typeof res + ')'
-    const hasStreams = res && typeof res === 'object'
-      ? { eventStream: !!(res.eventStream && typeof res.eventStream[Symbol.asyncIterator] === 'function'), textStream: !!(res.textStream && typeof res.textStream[Symbol.asyncIterator] === 'function') }
-      : null
-    console.log('[callModelForExtract] resType:', typeof res, '| resKeys:', JSON.stringify(resKeys), '| hasStreams:', JSON.stringify(hasStreams), '| extractedText:', JSON.stringify(text).slice(0, 300))
     return text
-  },
-
-  // 解析消费文本并记账。混合策略：正则优先（确定），模型兜底（模糊）。
-  // 正则判断不出 → 必须让大模型判断意图：抽到则记（模糊值带核实语气），
-  // 模型确认非记账(intent:false) → 交给对话变闲聊，两层都失败则保守不记。
-  // source 记录来源：regex=确定值直接确认；model=模糊值带核实语气。
-  // 混合策略（新）：正则做第一遍快速抽取 → 结果作为线索喂给模型，模型最终拍板。
-  // 模型返回统一结构 { action: 'add'|'correct'|'none', ... }，前端按 action 分支处理。
-  async tryRecord(text) {
-    if (!text) return;
-    // 第一遍：正则快速抽取（作为线索喂给模型，不再独裁）
-    const regexHint = parseExpense(text)
-    // 第二遍：调大模型，结合正则线索 + 最近一笔上下文，最终拍板
-    let decision
-    try {
-      const recent = await this.getLastRecord()
-      decision = await extractByModel(
-        text,
-        (prompt) => this.callModelForExtract(prompt),
-        { regexHint, recentRecord: recent }
-      )
-    } catch (e) {
-      decision = null
-    }
-    if (!decision || decision.action === 'none') return; // 非记账意图 → 交给模型正常对话
-
-    if (decision.action === 'correct') {
-      this.tryCorrect(decision, regexHint)
-      return
-    }
-    // action === 'add'
-    this.doAdd(decision, regexHint ? 'regex' : 'model')
   },
 
   // 查最近一笔记账（limit=1），返回 { _id, amount, category, note } 或 null
