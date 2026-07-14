@@ -57,7 +57,8 @@ Page({
       name: 'miaojiRecord',
       data: { action: 'list', payload: { limit: 1 } },
     }).then((res) => {
-      const list = (res.result && res.result.success && res.result.data) || [];
+      // 云函数 list 返回 { success, list: [...] }（字段名 list，非 data）
+      const list = (res.result && res.result.success && res.result.list) || [];
       if (!list.length) {
         self.appendUndoMsg('ℹ️ 没有可撤回的记录');
         wx.showToast({ title: '没有记录', icon: 'none' });
