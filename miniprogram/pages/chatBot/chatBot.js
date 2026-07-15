@@ -39,8 +39,10 @@ Page({
     // 这些分支的回复由前端代码按真实数据生成。所以这里只需把模型当"闲聊伙伴"。
     systemPrompt: "你是秒记，一款AI记账助手的闲聊模式。当用户只是闲聊或普通提问时，你正常、简洁、亲切地回答，像朋友一样。注意：用户说消费/收入/查询/撤回时，秒记会自动处理，你无需操心。始终用中文，口语化、有温度。",
     envShareConfig: null,
-    // 多轮上下文（仅当前会话，小程序切走清空）：记录最近一次 query 的 { query, summary }
-    // 供下一轮 classifyIntent 消解指代（"明细"/"那支出呢"/"6月呢"）
+    // 多轮上下文（仅当前会话，小程序切走清空）
+    // _history：最近 10 轮原始对话（user/assistant 文本），供 classifyIntent 全量指代消解
+    // _ctx：最近一次 query 的 { query, summary }（远处摘要基础，history 超出 10 轮时压缩用）
+    _history: [],
     _ctx: null,
   },
 
@@ -55,6 +57,9 @@ Page({
     const text = (e.detail && e.detail.content) || '';
     if (!text) return;
     const comp = this.selectComponent('#agentui');
+
+    // 维护对话历史（滑动窗口 10 轮）：先记 user 句，供 classifyIntent 全量指代消解
+    this.pushHistory({ role: 'user', text });
 
     // —— 同步段：正则快速预判（仅决定 suppress 与否，不作最终路由）——
     const regexExpense = parseExpense(text);
@@ -72,7 +77,14 @@ Page({
       decision = await classifyIntent(
         text,
         (prompt) => this.callModelForExtract(prompt),
-        { regexExpense, queryHint, undoHint, recentRecord, ctx: this.data._ctx }
+        {
+          regexExpense,
+          queryHint,
+          undoHint,
+          recentRecord,
+          ctx: this.data._ctx,
+          history: this.getHistory(), // 最近 10 轮原始对话（含本轮 user，已 push）
+        }
       );
     } catch (err) {
       decision = null;
@@ -99,6 +111,11 @@ Page({
     // 非 chat 分支：已 suppress（likelyNonChat 时），按 action 执行确定性逻辑
     switch (decision.action) {
       case 'record':
+        // 被动填槽：用户说"记一笔"等无金额的记账意图 → amount 为 null，不记账，追问补全
+        if (decision.amount === null || decision.amount === undefined) {
+          this.appendQueryMsg('好的，这笔花了多少？什么类别？（比如"38 餐饮"）')
+          return
+        }
         this.doAdd(decision, 'model');
         break;
       case 'correct':
@@ -184,6 +201,7 @@ Page({
     if (comp && comp.appendAssistantMessage) {
       comp.appendAssistantMessage(msg);
     }
+    this.pushHistory({ role: 'assistant', text: msg });
   },
 
   // 调大模型做结构化抽取（复用 CloudBase AI model 通道，与 agent-ui 一致）
@@ -233,6 +251,7 @@ Page({
           : '✅ 已记：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
         const comp = self.selectComponent('#agentui')
         if (comp && comp.appendAssistantMessage) comp.appendAssistantMessage(confirm)
+        self.pushHistory({ role: 'assistant', text: confirm })
         wx.showToast({ title: '记账成功', icon: 'success' })
       } else {
         wx.showToast({ title: '记账失败', icon: 'none' })
@@ -264,9 +283,11 @@ Page({
           const sign = amount < 0 ? '-' : '+'
           const notePart = note ? '（' + note + '）' : ''
           const comp = self.selectComponent('#agentui')
+          const correctMsg = '✅ 已更正：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
           if (comp && comp.appendAssistantMessage) {
-            comp.appendAssistantMessage('✅ 已更正：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart)
+            comp.appendAssistantMessage(correctMsg)
           }
+          self.pushHistory({ role: 'assistant', text: correctMsg })
           wx.showToast({ title: '已更正', icon: 'success' })
         } else {
           wx.showToast({ title: '更正失败', icon: 'none' })
@@ -443,12 +464,34 @@ Page({
     return s
   },
 
+  // 对话历史（滑动窗口 10 轮，仅当前会话）。用于 classifyIntent 全量指代消解。
+  pushHistory(entry) {
+    const h = this.data._history || []
+    h.push(entry)
+    // 超 10 轮：前 (len-10) 条压成 distantSummary（简单拼接关键词，远处摘要）
+    if (h.length > 10) {
+      const overflow = h.slice(0, h.length - 10)
+      const summary = overflow
+        .map((e) => (e.role === 'user' ? 'U:' + e.text : 'A:' + e.text))
+        .join(' | ')
+      this.data._ctx = Object.assign({}, this.data._ctx, { distantSummary: summary })
+      h.splice(0, h.length - 10)
+    }
+    this.setData({ _history: h })
+  },
+
+  // 取最近 10 轮历史（classifyIntent 用）。含本轮 user（onUserSend 已 push）
+  getHistory() {
+    return (this.data._history || []).slice(-10)
+  },
+
   // 往对话流追加查询回答（与记账确认同一通道，唯一来源）
   appendQueryMsg(msg) {
     const comp = this.selectComponent('#agentui')
     if (comp && comp.appendAssistantMessage) {
       comp.appendAssistantMessage(msg)
     }
+    this.pushHistory({ role: 'assistant', text: msg })
   },
 
   // parseExpense 已抽到 utils/parseExpense.js（便于复用与单元测试）

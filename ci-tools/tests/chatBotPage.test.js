@@ -35,8 +35,11 @@ function makeInst() {
     if (k === 'data') return
     if (typeof pageOpts[k] === 'function') inst[k] = pageOpts[k].bind(inst)
   })
+  // 每用例独立初始化多轮上下文（避免 pageOpts.data 被上一用例 push 污染）
+  inst._history = []
+  inst._ctx = null
   // 真实小程序里 this.data 是 data 对象（this.data._ctx 成立）；测试里也构造 data 引用
-  inst.data = Object.assign({}, pageOpts.data)
+  inst.data = Object.assign({}, pageOpts.data, { _history: [], _ctx: null })
   // setData mock：写回 inst.data + inst 顶层（模拟小程序双向同步），供多轮 ctx 读取
   inst.setData = jest.fn((patch) => {
     Object.assign(inst.data, patch)
@@ -281,6 +284,53 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     const msg2 = appendMock.mock.calls[0][0]
     expect(msg2).toContain('这个月你一共花了') // month 总览
     expect(msg2).toContain('¥263') // 支出总额
+  })
+
+  test('滑动窗口 history：记一笔 → 38餐饮 → 被动填槽补全记账', async () => {
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'add') return Promise.resolve({ result: { success: true } })
+      if (name === 'miaojiRecord' && data.action === 'list') return Promise.resolve({ result: { success: true, list: [] } })
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    // 第一轮：记一笔（无金额）→ 模型判 record amount:null → 追问，不记账
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"record","amount":null,"category":"其他","note":""}')
+    await send(inst, '记一笔')
+    await sleep()
+    expect(appendMock.mock.calls[0][0]).toContain('花了多少') // 追问
+    expect(callFunctionMock.mock.calls.map((c) => c[0].data.action)).not.toContain('add') // 没记账
+    // 第二轮：38 餐饮（结合 history 里的"记一笔"补全）
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"record","amount":-38,"category":"餐饮","note":""}')
+    appendMock.mockClear()
+    await send(inst, '38 餐饮')
+    await sleep()
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).toContain('add') // 补全后记账
+    const addCall = callFunctionMock.mock.calls.find((c) => c[0].data.action === 'add')
+    expect(addCall[0].data.payload.amount).toBe(-38)
+    expect(addCall[0].data.payload.category).toBe('餐饮')
+    expect(appendMock.mock.calls[0][0]).toContain('✅ 已记')
+  })
+
+  test('history 累积：两轮对话后 _history 含 user+assistant 各 2 条', async () => {
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'stats') return Promise.resolve({
+        result: { success: true, incomeTotal: 100, expenseTotal: -263, net: -163, count: 9, byCategory: [{ category: '餐饮', amount: -193 }], records: [{ _id: 'r3', amount: 100, type: 'income', category: '收入', note: '赚了', createdAt: new Date('2026-07-12T09:00:00') }] },
+      })
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"query","query":{"type":"income"}}')
+    await send(inst, '收入多少')
+    await sleep()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"query","query":{"type":"income"}}')
+    await send(inst, '明细')
+    await sleep()
+    // history 应含：U收入多少 / A收入回复 / U明细 / A明细回复 = 4 条
+    expect(inst.data._history.length).toBe(4)
+    expect(inst.data._history[0].role).toBe('user')
+    expect(inst.data._history[0].text).toBe('收入多少')
+    expect(inst.data._history[3].role).toBe('assistant')
   })
 })
 

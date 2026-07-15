@@ -134,6 +134,38 @@ describe('classifyIntent 统一意图路由', () => {
     expect(r.amount).toBe(-38)
   })
 
+  test('滑动窗口 history：跨轮指代"那笔最大的啥时候" → 结合历史收入明细理解', async () => {
+    const callModel = fakeCallModel('{"action":"query","query":{"type":"recent","only":"income"}}')
+    const history = [
+      { role: 'user', text: '收入多少' },
+      { role: 'assistant', text: '📊 这个月收入一共 ¥100（1 笔）：\n- 7月12日 赚了 +¥100' },
+      { role: 'user', text: '那笔最大的啥时候' },
+    ]
+    const r = await classifyIntent('那笔最大的啥时候', callModel, { history })
+    expect(r.action).toBe('query')
+    expect(r.query.type).toBe('recent')
+  })
+
+  test('被动填槽：history 有"记一笔"，当前"38 餐饮" → 合成完整 record', async () => {
+    const callModel = fakeCallModel('{"action":"record","amount":-38,"category":"餐饮","note":""}')
+    const history = [
+      { role: 'user', text: '记一笔' },
+      { role: 'assistant', text: '好的，这笔花了多少？什么类别？' },
+      { role: 'user', text: '38 餐饮' },
+    ]
+    const r = await classifyIntent('38 餐饮', callModel, { history })
+    expect(r.action).toBe('record')
+    expect(r.amount).toBe(-38)
+    expect(r.category).toBe('餐饮')
+  })
+
+  test('被动填槽：单独"记一笔"无金额 → record 但 amount:null（不退化 chat）', async () => {
+    const callModel = fakeCallModel('{"action":"record","amount":null,"category":"其他","note":""}')
+    const r = await classifyIntent('记一笔', callModel)
+    expect(r.action).toBe('record')
+    expect(r.amount).toBeNull()
+  })
+
   test('query: 未知 type 兜底为 month', async () => {
     const callModel = fakeCallModel('{"action":"query","query":{"type":"xxx"}}')
     const r = await classifyIntent('花了多少', callModel)

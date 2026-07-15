@@ -59,9 +59,16 @@ function normalizeAmount(amount, type) {
 }
 
 // 校验并归一化一条记账记录
+// 返回：{ amount, category, note } 正常；{ amount: null } 表示被动填槽（模型主动 amount:null，如"记一笔"无金额）；null 表示完全无效（退化 chat）
 function validateRecord(parsed) {
+  // 模型主动 amount:null（或字段缺失但明确是记账意图）→ 被动填槽，保留 record 让上层追问
+  if (parsed.amount === null || parsed.amount === undefined) {
+    const category = VALID_CATEGORIES.has(parsed.category) ? parsed.category : '其他'
+    const note = typeof parsed.note === 'string' ? parsed.note.slice(0, 20) : ''
+    return { amount: null, category, note }
+  }
   const amount = normalizeAmount(parsed.amount, parsed.type)
-  if (amount === null) return null
+  if (amount === null) return null // 金额无效（乱码/0/超范围）→ 退化 chat
   const category = VALID_CATEGORIES.has(parsed.category) ? parsed.category : '其他'
   const note = typeof parsed.note === 'string' ? parsed.note.slice(0, 20) : ''
   return { amount, category, note }
@@ -71,7 +78,7 @@ function validateRecord(parsed) {
 // 正则线索（parseExpense / parseQuery / parseUndo 的结果）作为上下文喂给模型，
 // 帮助它判断意图，但最终 decision 权在模型（正则可能漏抽或误抽）。
 function buildPrompt(text, hints = {}) {
-  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, context = null } = hints
+  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, context = null, history = null, distantSummary = null } = hints
   const lines = [
     '你是秒记记账助手的意图理解器。分析用户这句话的意图，输出一个 JSON 对象，不要任何解释、不要 markdown 代码块标记、不要多余文字。',
     '',
@@ -106,6 +113,10 @@ function buildPrompt(text, hints = {}) {
     '绝不要把"收入"当成消费分类去查 category:"收入"（收入记录 type=income，不在消费分类统计里）。"支出有多少"仍用 type:"month"（总览含支出）。',
     '"收入明细/支出明细" → type:"recent" 且 only:"income"/"expense"（只看某一类明细，不要混全量）。',
     '',
+    '被动填槽（多轮记账）：若用户说"记一笔/记一下/记个账"等记账意图但【没有金额】，',
+    '返回 action:"record" 且 amount:null（不要当成 chat，也不要瞎猜金额）。下一轮用户补"38 餐饮"时，',
+    '结合下方【对话历史】里的"记一笔"意图，合成完整 record（amount:-38, category:"餐饮"）。',
+    '',
   ]
 
   if (regexExpense) {
@@ -132,6 +143,25 @@ function buildPrompt(text, hints = {}) {
     lines.push('- 若本轮已含明确新意图（如"午饭38块"），以本轮为主，上下文仅辅助')
   }
 
+  // 对话历史（滑动窗口最近 10 轮原始对话）：全量指代消解 + 被动填槽补全
+  if (history && history.length) {
+    lines.push('')
+    lines.push('【对话历史】（最近若干轮原始对话，含当前轮之前的 user/assistant。用于全量指代消解与多轮记账补全）：')
+    history.forEach((h, i) => {
+      const role = h.role === 'user' ? '用户' : '助手'
+      lines.push(`${i + 1}. ${role}：${h.text}`)
+    })
+    lines.push('基于历史理解指代：')
+    lines.push('- "那笔/这个/它"等指代 → 结合历史里最近的相同或相关记录')
+    lines.push('- 多轮记账：历史有"记一笔"且当前轮补"38 餐饮" → 合成完整 record（amount:-38, category:"餐饮"）')
+    lines.push('- 若本轮已含完整意图（如"午饭38块"），忽略历史，以本轮为主')
+  }
+  if (distantSummary) {
+    lines.push('')
+    lines.push('【更早对话摘要】（超出滑动窗口的远处上下文，仅供参考）：')
+    lines.push(distantSummary)
+  }
+
   lines.push('')
   lines.push('示例：')
   lines.push('输入"中午跟同事吃了顿火锅大概五十多" → {"action":"record","amount":-55,"category":"餐饮","note":"火锅"}')
@@ -155,12 +185,14 @@ function buildPrompt(text, hints = {}) {
 //   { action: 'chat' }
 //   null  （模型调用失败 / 无法解析 → 保守降级，交给上层决定）
 // ctx（可选）：上一轮对话上下文 { query, summary }，用于多轮指代消解（仅当前会话）
+// history（可选）：滑动窗口最近 10 轮原始对话 [{role,text}]，全量指代消解 + 被动填槽补全
+// distantSummary（可选）：超出窗口的远处摘要
 async function classifyIntent(text, callModel, opts = {}) {
   if (!text || typeof callModel !== 'function') return null
-  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, ctx = null } = opts
+  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, ctx = null, history = null, distantSummary = null } = opts
   let raw
   try {
-    raw = await callModel(buildPrompt(text, { regexExpense, queryHint, undoHint, recentRecord, context: ctx }))
+    raw = await callModel(buildPrompt(text, { regexExpense, queryHint, undoHint, recentRecord, context: ctx, history, distantSummary }))
   } catch (e) {
     return null // 模型调用失败 → 降级，交回上层
   }
