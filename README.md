@@ -1,26 +1,63 @@
-﻿# 秒记 (MiaoJi)
+# 秒记 (MiaoJi)
 
 > 说话即记账的 AI 记账微信小程序。基于腾讯云开发（CloudBase）+ 大模型，用户用自然语言说出消费，AI 自动识别金额、分类并保存。
 
 ## 项目一句话
 
-**秒记** = 微信小程序 + 云开发 Agent + 记账云函数。首页展示收支汇总与最近记录，对话页用自然语言记账，引导页讲清怎么用。
+**秒记** = 微信小程序 + 云开发（CloudBase）大模型 + 记账云函数。首页展示收支汇总与最近记录，对话页用自然语言记账 / 查询，意图理解全部在端侧完成。
 
 ## 功能
 
 - 💬 **对话记账**：说"午饭花了38块"，自动识别金额 + 分类（餐饮）入库
-- 📊 **智能汇总**：首页实时展示今日 / 本月支出
-- 📝 **最近记录**：首页展示最近 5 笔，下拉刷新
+- 🔍 **自然语言查询**（已上线）：
+  - "这个月花了多少" → 月总览（支出 / 收入 / 净 + 分类 Top + 逐笔明细）
+  - "餐饮花了多少" → 单类查询
+  - "按分类统计支出" → 全部分类分布
+  - "收入有多少" → 收入汇总 + 真实收入明细
+  - "最近记了啥" → 最近 8 笔
+- 🔄 **多轮上下文**（已上线）：滑动窗口 10 轮原始对话，模型结合历史消解指代
+  - "明细" → 延续上一轮（如收入明细）
+  - "那支出呢" → 切到月总览
+  - "6月呢" → 沿用上轮类型、换月份
+  - "那笔最大的啥时候" → 跨轮指代（看历史里的具体记录）
+- ✏️ **被动填槽**（已上线）："记一笔" → 追问金额/类别 → "38 餐饮" 自动补全记账
+- ↩️ **撤回 / 更正**："记错了" 撤回最近一笔；"想起来错了，是60" 更正金额
+- 📊 **首页汇总**：今日 / 本月收支 + 最近 5 笔，下拉刷新
+- 🛡️ **误记防护**：裸数字（"我身高180""墙高3块砖"）不记账；含消费意图词（"午饭38"）才记
 - 📷 **拍照记账**（规划中）：上传小票，AI 提取金额与商家
-- 🔍 **自然语言查询**（规划中）："这个月餐饮花了多少" → 即时回答
+
+## 架构
+
+**核心原则：模型先做意图判断，代码按 action 选分支执行。模型在一轮里只输出意图 JSON，绝不输出给用户看的散文——查到的数据由代码拼模板，零幻觉。**
+
+```
+用户输入
+  ↓ parseExpense / parseQuery / parseUndo（正则抽线索，仅喂模型辅助）
+  ↓ classifyIntent（大模型判意图，结合滑动窗口 history + 上一轮 ctx）
+  ↓ switch(action)：
+      record   → miaojiRecord(add) + ✅ 卡片
+      correct  → miaojiRecord(update 最近一笔) + ✅ 卡片
+      query    → miaojiRecord(stats/summary/list) + 📊 模板（真实数据，代码生成）
+      undo     → miaojiRecord(list+delete) + 🗑️ 卡片
+      chat     → 放行 agent-ui 模型自由对话（唯一模型发声的分支）
+```
+
+**多轮上下文**：
+- `_history`：最近 10 轮原始对话（`{role, text}`），每轮 `onUserSend`/`appendQueryMsg` 等维护
+- `_ctx`：超出窗口的远处摘要（前段对话压缩），避免 context 爆炸
+- `classifyIntent` 把 history 格式化成多轮对话给模型，教它消解指代 / 补全多轮记账
+
+**为什么不在 agent 侧做？** 早期依赖 CloudBase Agent 后台配置 `miaojiRecord` 工具，链路长且不可控。现改为**前端直连 CloudBase 大模型（hy3）做意图判断**，云函数只做数据读写，逻辑全在代码里、可单测、可复现。
 
 ## 技术栈
 
 - 微信小程序（原生，无 Taro/uni-app）
 - **腾讯云开发（CloudBase）** + `wx.cloud` SDK
   - env: `seclog-d1g8no5pc45e643aa`（`ap-shanghai`）
-- 云开发 Agent（`agent-miaojijizha-5esko48c0cb04a`）+ 云函数 `miaojiRecord` 完成记账数据读写
-- 对话 UI 复用 `components/agent-ui` 组件
+- 对话 UI 复用 `components/agent-ui` 组件（bot 模式，直连大模型）
+- 意图理解：`miniprogram/utils/extractByModel.js`（`classifyIntent` + prompt）
+- 记账数据：`cloudfunctions/miaojiRecord/` 云函数（增 / 查 / 删 / 汇总 / 统计）
+- 本地测试：`ci-tools/`（Jest，141 用例，覆盖意图路由 / 云函数 / 多轮上下文）
 - 基础库最低 `3.8.1`，本地推荐 `3.16.2`（见 `project.private.config.json`）
 
 ## 目录结构
@@ -31,15 +68,22 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 │   ├── pages/
 │   │   ├── index/              ← 首页：品牌 + 收支汇总 + 最近记录 + 入口
 │   │   ├── chatBot/            ← 记账对话页（agent-ui 组件，bot 模式）
+│   │   │   └── chatBot.js      ← ⭐ 意图路由 + 多轮上下文 + 查询模板（核心）
 │   │   └── guide/              ← 使用引导页（独立入口）
 │   ├── components/
 │   │   ├── agent-ui/           ← 对话主体组件（含工具卡片渲染）
 │   │   └── toolCard/           ← 地图/天气/商家等工具卡（agent-ui 依赖，勿删）
+│   ├── utils/
+│   │   ├── extractByModel.js   ← ⭐ classifyIntent：大模型意图判断（含多轮 history）
+│   │   ├── parseExpense.js     ← 正则抽金额/分类（辅助线索）
+│   │   └── collectStreamText.js← 流式响应文本收集
 │   ├── app.js / app.json / app.wxss
 │   └── package.json / sitemap.json
-├── cloudfunctions/              ← 云函数目录
-│   ├── miaojiRecord/           ← ⭐ 记账云函数（增/查/删/汇总）
-│   └── quickstartFunctions/    ← 早期压测 demo（可删）
+├── cloudfunctions/
+│   └── miaojiRecord/           ← ⭐ 记账云函数（add/list/delete/summary/stats，按 openid 隔离）
+├── ci-tools/                   ← ⭐ 本地测试 + 编译（Jest + compile.js 出真机二维码）
+│   ├── tests/                  ← 141 用例（意图路由 / 云函数 / 多轮 / 页面集成）
+│   └── compile.js              ← 微信开发者工具 CLI 编译，生成真机预览二维码
 ├── project.config.json         ← 微信开发者工具项目配置
 ├── project.private.config.json ← 本地私有配置（不提交）
 ├── uploadCloudFunction.sh       ← 云函数部署脚本
@@ -53,6 +97,20 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 3. 在 `project.private.config.json` 填入你的小程序 `appid`（仓库默认 hardcode 测试 appid `WX_OWN_APPID_PLACEHOLDER`）
 4. 编译运行
 
+## 本地测试
+
+```bash
+cd ci-tools
+npx jest            # 跑全量 141 用例（意图路由 / 云函数 / 多轮上下文 / 页面集成）
+npx jest tests/extractByModel.test.js   # 单文件
+```
+
+出真机预览二维码（需微信开发者工具 CLI）：
+
+```bash
+node ci-tools/compile.js preview
+```
+
 ## 云函数部署
 
 ```bash
@@ -63,33 +121,25 @@ npm i -g @cloudbase/cli
 ./uploadCloudFunction.sh
 ```
 
-脚本可覆盖环境变量：`ENV_ID` / `PROJECT_PATH` / `INSTALL_PATH`（详见脚本内注释）。
-
-`miaojiRecord` 已通过 CloudBase MCP 部署至 env `seclog-d1g8no5pc45e643aa`，无需本地再部署即可运行。
-
-## 记账数据流
-
-```
-用户说话 → chatBot(agent-ui) → CloudBase Agent(agent-miaojijizha-5esko48c0cb04a)
-         → 调用 miaojiRecord 云函数 → 读写 miaoji_records 集合（按 openid 隔离）
-首页 onShow → 直接调用 miaojiRecord(summary / list) → 展示汇总与最近记录
-```
-
-> ⚠️ **要使对话真正记账**，需在 CloudBase 控制台为 `agent-miaojijizha-5esko48c0cb04a` 配置调用 `miaojiRecord` 云函数的工具（agent 侧工具绑定不在这份代码里）。前端 UI 已就绪，配好即生效。
+`miaojiRecord` 已通过 CloudBase MCP 部署至 env `seclog-d1g8no5pc45e643aa`，改代码后需重新上传（本地改了 ≠ 线上跑新版）。
 
 ## 配置说明
 
 - **云环境**：`miniprogram/app.js` 中 `wx.cloud.init({ env: "seclog-d1g8no5pc45e643aa" })`
-- **Agent**：`miniprogram/pages/chatBot/chatBot.js` 的 `agentConfig.botId`
-- **切换自己的环境**：改 `app.js` 的 env + `chatBot.js` 的 botId 即可
+- **大模型**：`miniprogram/pages/chatBot/chatBot.js` 的 `modelConfig`（provider=cloudbase, model=hy3）
+- **切换自己的环境**：改 `app.js` 的 env + `chatBot.js` 的 modelConfig 即可
 
 ## 已知状态
 
 | 项 | 状态 |
 |---|---|
-| `miniprogram/` 版本控制 | ✅ 已纳入 git（原嵌套仓库 `.git` 已移除，commit `94026db`）|
+| `miniprogram/` 版本控制 | ✅ 已纳入 git |
 | 记账后端 | ✅ `miaojiRecord` 云函数 + `miaoji_records` 集合已上线 |
-| 对话记账可用性 | ⏳ 依赖 CloudBase 后台为 bot 配置 `miaojiRecord` 工具 |
+| 意图路由（record/query/undo/correct/chat） | ✅ 前端 classifyIntent 完成 |
+| 多轮上下文（滑动窗口 10 轮 + 远处摘要） | ✅ 已上线 |
+| 被动填槽（记一笔→追问→补全） | ✅ 已上线 |
+| 本地测试 | ✅ 141 用例全绿 |
+| 拍照记账 | 🟡 规划中 |
 | `quickstartFunctions` | 🟡 早期压测 demo，与产品无关，可删 |
 
 ## 文档参考
@@ -100,5 +150,4 @@ npm i -g @cloudbase/cli
 
 ---
 
-**最后更新**: 2026-07-13 — 转型为「秒记」AI 记账工具（后端 + 首页 + 引导页 + 对话改造），README 同步重写
-
+**最后更新**: 2026-07-15 — 架构改为前端直连大模型判意图 + 云函数读写；上线自然语言查询 / 多轮上下文 / 被动填槽；本地测试 141 用例；README 重写
