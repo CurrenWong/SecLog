@@ -164,6 +164,24 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(msg).toContain('按分类统计')
     expect(msg).not.toContain('还没记过')
   })
+
+  test('收入查询 → 模型判 income → tryQuery 走 summary（不是 category:收入）', async () => {
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'summary') return Promise.resolve({ result: { success: true, month: { income: 8000, expense: -500 }, day: { income: 0, expense: 0 } } })
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"action":"query","query":{"type":"income"}}')
+    await send(inst, '收入有多少')
+    await sleep()
+
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).toContain('summary') // 走 summary 拿收入，不是 stats+category
+    expect(actions).not.toContain('add')
+    expect(appendMock).toHaveBeenCalled()
+    expect(appendMock.mock.calls[0][0]).toContain('收入一共 ¥8000')
+    expect(appendMock.mock.calls[0][0]).not.toContain('还没记过「收入」')
+  })
 })
 
 describe('B2 失败路径（callFunction reject / 模型降级失败）', () => {
@@ -330,5 +348,23 @@ describe('查询回复 buildQueryReply（真实明细，不依赖模型编造）
     expect(msg).toContain('餐饮')
     expect(msg).toContain('其他')
     expect(msg).not.toContain('还没记过「其他」')
+  })
+
+  test('income 分支：收入汇总（来自 summary.month.income），不误报"没记过收入"', () => {
+    const inst = makeInst()
+    const q = { type: 'income' }
+    const result = { success: true, month: { income: 8000, expense: -500 }, day: { income: 0, expense: 0 } }
+    const msg = inst.buildQueryReply(q, result)
+    expect(msg).toContain('收入一共 ¥8000')
+    expect(msg).not.toContain('还没记过')
+  })
+
+  test('income 分支：收入为 0 → 提示未记收入（不是"没记过收入分类"）', () => {
+    const inst = makeInst()
+    const q = { type: 'income' }
+    const result = { success: true, month: { income: 0, expense: -200 }, day: { income: 0, expense: 0 } }
+    const msg = inst.buildQueryReply(q, result)
+    expect(msg).toContain('还没有任何收入记录')
+    expect(msg).not.toContain('还没记过「收入」')
   })
 })

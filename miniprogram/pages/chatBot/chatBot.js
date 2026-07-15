@@ -294,6 +294,9 @@ Page({
       // 按分类统计：查全部分类聚合（云函数 stats 不传 category 即返回 byCategory）
       action = 'stats'
       payload = {}
+    } else if (q.type === 'income') {
+      // 收入汇总：走 summary 拿 month.income（收入是汇总维度，不在消费分类里）
+      action = 'summary'
     } else {
       // month
       action = 'stats'
@@ -342,6 +345,12 @@ Page({
       if (!cats.length) return '📊 这个月还没记账呢，说一笔我帮你记上~'
       const lines = cats.map((c) => '· ' + c.category + ' ' + fmt(c.amount) + '（' + (c.count || 0) + ' 笔）')
       return '📊 这个月按分类统计（支出）：\n' + lines.join('\n')
+    }
+    if (q.type === 'income') {
+      // 收入汇总：来自 summary 的 month.income
+      const income = (result.month && result.month.income) || result.incomeTotal || 0
+      if (income === 0) return '📊 这个月还没有任何收入记录呢，说一笔我帮你记~'
+      return '📊 这个月收入一共 ' + fmt(income)
     }
     if (q.type === 'category') {
       const amount = result.amount || 0

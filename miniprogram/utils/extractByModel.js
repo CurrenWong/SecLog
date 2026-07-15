@@ -26,7 +26,7 @@ const VALID_CATEGORIES = new Set([
 const MAX_ABS_AMOUNT = 1e7
 
 // 查询类型白名单
-const VALID_QUERY_TYPES = new Set(['month', 'day', 'category', 'recent', 'breakdown'])
+const VALID_QUERY_TYPES = new Set(['month', 'day', 'category', 'recent', 'breakdown', 'income'])
 
 // 从模型文本中抠出第一个 JSON 对象（兼容 ```json 代码块 或裸 JSON）
 function extractJson(text) {
@@ -88,8 +88,9 @@ function buildPrompt(text, hints = {}) {
     '    type 说明：',
     '      "month"  = 这个月总共花了多少（总览）',
     '      "day"    = 今天花了多少',
-    '      "category" = 指定某个分类花了多少（必须带 category，如"餐饮花了多少"→category:"餐饮"）',
+    '      "category" = 指定某个【消费】分类花了多少（必须带 category，如"餐饮花了多少"→category:"餐饮"）',
     '      "breakdown" = 按分类统计支出（列出所有分类各自花了多少，如"按分类统计/各类花了多少/分类汇总"，不带具体分类名）',
+    '      "income" = 问收入汇总（如"收入有多少""赚了多少""这个月入账多少"）→ 注意：不要判成 category:"收入"，收入是汇总维度不是消费分类',
     '      "recent" = 最近记了几笔（明细）',
     '- 当 action="undo" 或 "chat" 时，不带其他字段。',
     '',
@@ -101,6 +102,8 @@ function buildPrompt(text, hints = {}) {
     '注意：含具体金额（如"午饭38块"）通常是 record；问"花了多少"即使带分类词也是 query，不是 record。',
     '区分"category"与"breakdown"：用户点名了某个具体分类（"餐饮花了多少""交通呢"）→ type:"category" 且带 category:"餐饮"；',
     '用户要的是全部分类分布（"按分类统计支出""各类花了多少""分类汇总一下""支出结构"）→ type:"breakdown"（不带 category）。',
+    '区分"income"与"category:收入"：用户问收入汇总（"收入有多少""赚了多少""进账多少"）→ type:"income"（不带 category）；',
+    '绝不要把"收入"当成消费分类去查 category:"收入"（收入记录 type=income，不在消费分类统计里）。"支出有多少"仍用 type:"month"（总览含支出）。',
     '',
   ]
 
