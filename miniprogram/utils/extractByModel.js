@@ -91,7 +91,7 @@ function buildPrompt(text, hints = {}) {
     '      "category" = 指定某个【消费】分类花了多少（必须带 category，如"餐饮花了多少"→category:"餐饮"）',
     '      "breakdown" = 按分类统计支出（列出所有分类各自花了多少，如"按分类统计/各类花了多少/分类汇总"，不带具体分类名）',
     '      "income" = 问收入汇总（如"收入有多少""赚了多少""这个月入账多少"）→ 注意：不要判成 category:"收入"，收入是汇总维度不是消费分类',
-    '      "recent" = 最近记了几笔（明细）',
+    '      "recent" = 最近记了几笔（明细），可附 only:"income" 只看收入 / only:"expense" 只看支出（如"收入明细"→recent+only:"income"）',
     '- 当 action="undo" 或 "chat" 时，不带其他字段。',
     '',
     '判断规则：',
@@ -104,6 +104,7 @@ function buildPrompt(text, hints = {}) {
     '用户要的是全部分类分布（"按分类统计支出""各类花了多少""分类汇总一下""支出结构"）→ type:"breakdown"（不带 category）。',
     '区分"income"与"category:收入"：用户问收入汇总（"收入有多少""赚了多少""进账多少"）→ type:"income"（不带 category）；',
     '绝不要把"收入"当成消费分类去查 category:"收入"（收入记录 type=income，不在消费分类统计里）。"支出有多少"仍用 type:"month"（总览含支出）。',
+    '"收入明细/支出明细" → type:"recent" 且 only:"income"/"expense"（只看某一类明细，不要混全量）。',
     '',
   ]
 
@@ -163,6 +164,9 @@ async function classifyIntent(text, callModel, opts = {}) {
     const query = { type }
     if (type === 'category') {
       query.category = VALID_CATEGORIES.has(q.category) ? q.category : '其他'
+    }
+    if (type === 'recent' && (q.only === 'income' || q.only === 'expense')) {
+      query.only = q.only
     }
     return { action: 'query', query }
   }

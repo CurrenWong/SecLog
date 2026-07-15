@@ -165,22 +165,41 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(msg).not.toContain('还没记过')
   })
 
-  test('收入查询 → 模型判 income → tryQuery 走 summary（不是 category:收入）', async () => {
+  test('收入查询 → 模型判 income → tryQuery 走 stats（带明细，不是 category:收入）', async () => {
     callFunctionMock.mockImplementation(({ name, data }) => {
-      if (name === 'miaojiRecord' && data.action === 'summary') return Promise.resolve({ result: { success: true, month: { income: 8000, expense: -500 }, day: { income: 0, expense: 0 } } })
+      if (name === 'miaojiRecord' && data.action === 'stats') return Promise.resolve({
+        result: {
+          success: true,
+          incomeTotal: 100,
+          expenseTotal: -263,
+          net: -163,
+          count: 9,
+          byCategory: [{ category: '餐饮', amount: -193 }, { category: '娱乐', amount: -50 }, { category: '购物', amount: -20 }],
+          records: [
+            { _id: 'r1', amount: -50, type: 'expense', category: '娱乐', note: '刮刮乐亏了', createdAt: new Date('2026-07-14T10:00:00') },
+            { _id: 'r2', amount: -88, type: 'expense', category: '餐饮', note: '午饭', createdAt: new Date('2026-07-13T12:00:00') },
+            { _id: 'r3', amount: 100, type: 'income', category: '收入', note: '赚了', createdAt: new Date('2026-07-12T09:00:00') },
+            { _id: 'r4', amount: -20, type: 'expense', category: '购物', note: '买股票亏了', createdAt: new Date('2026-07-11T15:00:00') },
+          ],
+        },
+      })
       return Promise.resolve({ result: { success: false } })
     })
     const inst = makeInst()
     jest.spyOn(inst, 'callModelForExtract').mockResolvedValue('{"action":"query","query":{"type":"income"}}')
-    await send(inst, '收入有多少')
+    await send(inst, '收入这个月多少')
     await sleep()
 
     const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
-    expect(actions).toContain('summary') // 走 summary 拿收入，不是 stats+category
+    expect(actions).toContain('stats') // 走 stats 拿 incomeTotal + records 明细
     expect(actions).not.toContain('add')
     expect(appendMock).toHaveBeenCalled()
-    expect(appendMock.mock.calls[0][0]).toContain('收入一共 ¥8000')
-    expect(appendMock.mock.calls[0][0]).not.toContain('还没记过「收入」')
+    const msg = appendMock.mock.calls[0][0]
+    expect(msg).toContain('收入一共 ¥100') // 汇总
+    expect(msg).toContain('赚了') // 真实收入明细（不混支出）
+    expect(msg).toContain('+¥100')
+    expect(msg).not.toContain('刮刮乐') // 不应出现支出行
+    expect(msg).not.toContain('还没记过「收入」')
   })
 })
 
@@ -350,21 +369,49 @@ describe('查询回复 buildQueryReply（真实明细，不依赖模型编造）
     expect(msg).not.toContain('还没记过「其他」')
   })
 
-  test('income 分支：收入汇总（来自 summary.month.income），不误报"没记过收入"', () => {
+  test('income 分支：收入汇总+真实明细（来自 stats records 过滤 income），不误报"没记过收入"', () => {
     const inst = makeInst()
     const q = { type: 'income' }
-    const result = { success: true, month: { income: 8000, expense: -500 }, day: { income: 0, expense: 0 } }
+    const result = {
+      success: true,
+      incomeTotal: 100,
+      expenseTotal: -263,
+      count: 9,
+      records: [
+        { _id: 'r1', amount: -50, type: 'expense', category: '娱乐', note: '刮刮乐亏了', createdAt: new Date('2026-07-14T10:00:00') },
+        { _id: 'r3', amount: 100, type: 'income', category: '收入', note: '赚了', createdAt: new Date('2026-07-12T09:00:00') },
+      ],
+    }
     const msg = inst.buildQueryReply(q, result)
-    expect(msg).toContain('收入一共 ¥8000')
+    expect(msg).toContain('收入一共 ¥100')
+    expect(msg).toContain('赚了') // 真实收入明细
+    expect(msg).toContain('+¥100')
+    expect(msg).not.toContain('刮刮乐') // 不含支出
     expect(msg).not.toContain('还没记过')
   })
 
   test('income 分支：收入为 0 → 提示未记收入（不是"没记过收入分类"）', () => {
     const inst = makeInst()
     const q = { type: 'income' }
-    const result = { success: true, month: { income: 0, expense: -200 }, day: { income: 0, expense: 0 } }
+    const result = { success: true, incomeTotal: 0, expenseTotal: -200, count: 3, records: [] }
     const msg = inst.buildQueryReply(q, result)
     expect(msg).toContain('还没有任何收入记录')
     expect(msg).not.toContain('还没记过「收入」')
+  })
+
+  test('recent+only=income → 只看收入明细（不混支出）', () => {
+    const inst = makeInst()
+    const q = { type: 'recent', only: 'income' }
+    const result = {
+      success: true,
+      list: [
+        { _id: 'r1', amount: -50, type: 'expense', category: '娱乐', note: '刮刮乐亏了', createdAt: new Date('2026-07-14T10:00:00') },
+        { _id: 'r3', amount: 100, type: 'income', category: '收入', note: '赚了', createdAt: new Date('2026-07-12T09:00:00') },
+      ],
+    }
+    const msg = inst.buildQueryReply(q, result)
+    expect(msg).toContain('收入')
+    expect(msg).toContain('赚了')
+    expect(msg).not.toContain('刮刮乐')
   })
 })

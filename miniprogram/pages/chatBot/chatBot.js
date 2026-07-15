@@ -295,8 +295,9 @@ Page({
       action = 'stats'
       payload = {}
     } else if (q.type === 'income') {
-      // 收入汇总：走 summary 拿 month.income（收入是汇总维度，不在消费分类里）
-      action = 'summary'
+      // 收入汇总：走 stats（返回 records 全量 + incomeTotal，前端过滤 income 行做明细）
+      action = 'stats'
+      payload = {}
     } else {
       // month
       action = 'stats'
@@ -330,14 +331,18 @@ Page({
       return s
     }
     if (q.type === 'recent') {
-      const list = result.list || []
+      let list = result.list || []
+      // only 过滤：income 只看收入，expense 只看支出（"收入明细"场景）
+      if (q.only === 'income') list = list.filter((r) => r.type === 'income')
+      else if (q.only === 'expense') list = list.filter((r) => r.type !== 'income')
       if (!list.length) return '📊 还没有任何记录哦，说一笔我帮你记~'
       const lines = list.slice(0, 8).map((r, i) => {
         const sign = r.type === 'income' ? '+' : '-'
         const cat = r.category || '其他'
         return (i + 1) + '. ' + cat + ' ' + sign + fmt(r.amount) + (r.note ? '（' + r.note + '）' : '')
       })
-      return '📊 最近记的 ' + list.length + ' 笔：\n' + lines.join('\n')
+      const label = q.only === 'income' ? '收入' : q.only === 'expense' ? '支出' : ''
+      return '📊 最近记的' + (label ? label : '') + list.length + ' 笔：\n' + lines.join('\n')
     }
     if (q.type === 'breakdown') {
       // 按分类统计支出：列出所有有支出的分类及金额（来自云函数 byCategory）
@@ -347,10 +352,20 @@ Page({
       return '📊 这个月按分类统计（支出）：\n' + lines.join('\n')
     }
     if (q.type === 'income') {
-      // 收入汇总：来自 summary 的 month.income
-      const income = (result.month && result.month.income) || result.incomeTotal || 0
+      // 收入汇总：来自 stats 的 incomeTotal；并列出真实收入笔记录（过滤 records 中的 income 行）
+      const income = result.incomeTotal || 0
       if (income === 0) return '📊 这个月还没有任何收入记录呢，说一笔我帮你记~'
-      return '📊 这个月收入一共 ' + fmt(income)
+      const incomeRecords = (result.records || []).filter((r) => r.type === 'income')
+      let s = '📊 这个月收入一共 ' + fmt(income) + '（' + incomeRecords.length + ' 笔）'
+      if (incomeRecords.length) {
+        const lines = incomeRecords.map((r) => {
+          const d = r.createdAt ? new Date(r.createdAt) : null
+          const dateStr = d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : ''
+          return '- ' + dateStr + ' ' + (r.note || r.category || '收入') + ' +' + fmt(r.amount)
+        })
+        s += '：\n' + lines.join('\n')
+      }
+      return s
     }
     if (q.type === 'category') {
       const amount = result.amount || 0
