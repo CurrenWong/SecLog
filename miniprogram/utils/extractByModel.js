@@ -71,7 +71,7 @@ function validateRecord(parsed) {
 // 正则线索（parseExpense / parseQuery / parseUndo 的结果）作为上下文喂给模型，
 // 帮助它判断意图，但最终 decision 权在模型（正则可能漏抽或误抽）。
 function buildPrompt(text, hints = {}) {
-  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null } = hints
+  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, context = null } = hints
   const lines = [
     '你是秒记记账助手的意图理解器。分析用户这句话的意图，输出一个 JSON 对象，不要任何解释、不要 markdown 代码块标记、不要多余文字。',
     '',
@@ -120,6 +120,17 @@ function buildPrompt(text, hints = {}) {
   if (recentRecord) {
     lines.push(`最近一笔记账（用于判断 undo/correct）：${JSON.stringify(recentRecord)}`)
   }
+  if (context) {
+    lines.push('')
+    lines.push('【上一轮对话上下文】（仅当前会话有效，用于消解指代/追问）：')
+    lines.push(JSON.stringify(context))
+    lines.push('指代消解规则：')
+    lines.push('- 用户说"明细/具体呢/展开"等 → 延续上一轮的 query.type（如上一轮是 income，则仍 income 但带明细）')
+    lines.push('- 用户说"那支出呢/支出多少" → 切到 type:"month"（同一时间段看支出总览）')
+    lines.push('- 用户说"X月呢/上个月/上月" → 沿用上一轮 query.type，仅把 month 换成对应月份（如"6月呢"→month:"2026-06"）')
+    lines.push('- 用户说"它/这笔/那个/删掉" → 结合上下文指代上一轮提到的记录或分类')
+    lines.push('- 若本轮已含明确新意图（如"午饭38块"），以本轮为主，上下文仅辅助')
+  }
 
   lines.push('')
   lines.push('示例：')
@@ -143,12 +154,13 @@ function buildPrompt(text, hints = {}) {
 //   { action: 'undo' }
 //   { action: 'chat' }
 //   null  （模型调用失败 / 无法解析 → 保守降级，交给上层决定）
+// ctx（可选）：上一轮对话上下文 { query, summary }，用于多轮指代消解（仅当前会话）
 async function classifyIntent(text, callModel, opts = {}) {
   if (!text || typeof callModel !== 'function') return null
-  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null } = opts
+  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, ctx = null } = opts
   let raw
   try {
-    raw = await callModel(buildPrompt(text, { regexExpense, queryHint, undoHint, recentRecord }))
+    raw = await callModel(buildPrompt(text, { regexExpense, queryHint, undoHint, recentRecord, context: ctx }))
   } catch (e) {
     return null // 模型调用失败 → 降级，交回上层
   }
@@ -167,6 +179,10 @@ async function classifyIntent(text, callModel, opts = {}) {
     }
     if (type === 'recent' && (q.only === 'income' || q.only === 'expense')) {
       query.only = q.only
+    }
+    // month 类型：携带 month（"2026-06" 或上下文里的 "this"），供 tryQuery 用指定月份查询
+    if (type === 'month' && q.month) {
+      query.month = q.month
     }
     return { action: 'query', query }
   }

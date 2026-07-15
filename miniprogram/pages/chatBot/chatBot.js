@@ -39,6 +39,9 @@ Page({
     // 这些分支的回复由前端代码按真实数据生成。所以这里只需把模型当"闲聊伙伴"。
     systemPrompt: "你是秒记，一款AI记账助手的闲聊模式。当用户只是闲聊或普通提问时，你正常、简洁、亲切地回答，像朋友一样。注意：用户说消费/收入/查询/撤回时，秒记会自动处理，你无需操心。始终用中文，口语化、有温度。",
     envShareConfig: null,
+    // 多轮上下文（仅当前会话，小程序切走清空）：记录最近一次 query 的 { query, summary }
+    // 供下一轮 classifyIntent 消解指代（"明细"/"那支出呢"/"6月呢"）
+    _ctx: null,
   },
 
   // 用户输入发送时触发（agent-ui 抛出）
@@ -69,7 +72,7 @@ Page({
       decision = await classifyIntent(
         text,
         (prompt) => this.callModelForExtract(prompt),
-        { regexExpense, queryHint, undoHint, recentRecord }
+        { regexExpense, queryHint, undoHint, recentRecord, ctx: this.data._ctx }
       );
     } catch (err) {
       decision = null;
@@ -314,10 +317,35 @@ Page({
       }
       const msg = self.buildQueryReply(q, res.result)
       self.appendQueryMsg(msg)
+      // 写多轮上下文：下一轮 classifyIntent 用它消解指代（"明细"/"那支出呢"/"6月呢"）
+      self.setData({ _ctx: { query: q, summary: self.summarizeResult(q, res.result) } })
     }).catch((err) => {
       console.error('miaojiRecord query failed', err)
       self.appendQueryMsg('😅 查询出错了，稍后再试试')
     })
+  },
+
+  // 从云函数 result 抽关键信息，作为下一轮指代消解的上下文摘要（不存全量，省 token）
+  summarizeResult(q, result) {
+    const s = { type: q.type }
+    if (q.type === 'income') {
+      s.incomeTotal = result.incomeTotal || 0
+      s.incomeCount = (result.records || []).filter((r) => r.type === 'income').length
+    } else if (q.type === 'month') {
+      s.expenseTotal = result.expenseTotal || 0
+      s.incomeTotal = result.incomeTotal || 0
+      s.count = result.count || 0
+    } else if (q.type === 'category') {
+      s.category = q.category
+      s.amount = result.amount || 0
+    } else if (q.type === 'breakdown') {
+      s.cats = (result.byCategory || []).map((c) => c.category)
+    } else if (q.type === 'recent') {
+      s.count = (result.list || []).length
+    } else if (q.type === 'day') {
+      s.day = result.day || {}
+    }
+    return s
   },
 
   // 构造查询回答（模板，确定不幻觉）

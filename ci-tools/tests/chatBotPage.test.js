@@ -35,6 +35,13 @@ function makeInst() {
     if (k === 'data') return
     if (typeof pageOpts[k] === 'function') inst[k] = pageOpts[k].bind(inst)
   })
+  // 真实小程序里 this.data 是 data 对象（this.data._ctx 成立）；测试里也构造 data 引用
+  inst.data = Object.assign({}, pageOpts.data)
+  // setData mock：写回 inst.data + inst 顶层（模拟小程序双向同步），供多轮 ctx 读取
+  inst.setData = jest.fn((patch) => {
+    Object.assign(inst.data, patch)
+    Object.assign(inst, patch)
+  })
   // 注意：selectComponent 返回的对象需含 appendAssistantMessage（appendQueryMsg/appendUndoMsg 用）
   // 以及 suppressModelOnce（onUserSend 同步段调用；测试里不存在则跳过，不影响断言）
   inst.selectComponent = jest.fn().mockReturnValue({ appendAssistantMessage: appendMock })
@@ -200,6 +207,80 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(msg).toContain('+¥100')
     expect(msg).not.toContain('刮刮乐') // 不应出现支出行
     expect(msg).not.toContain('还没记过「收入」')
+  })
+
+  test('多轮上下文：先问收入 → 再发"明细" → 延续 income（不再循环 recent）', async () => {
+    // mock stats 返回（收入+支出混合 records）
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'stats') return Promise.resolve({
+        result: {
+          success: true,
+          incomeTotal: 100,
+          expenseTotal: -263,
+          net: -163,
+          count: 9,
+          byCategory: [{ category: '餐饮', amount: -193 }, { category: '娱乐', amount: -50 }, { category: '购物', amount: -20 }],
+          records: [
+            { _id: 'r1', amount: -50, type: 'expense', category: '娱乐', note: '刮刮乐亏了', createdAt: new Date('2026-07-14T10:00:00') },
+            { _id: 'r3', amount: 100, type: 'income', category: '收入', note: '赚了', createdAt: new Date('2026-07-12T09:00:00') },
+          ],
+        },
+      })
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    // 第一轮：问收入
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"query","query":{"type":"income"}}')
+    await send(inst, '收入这个月多少')
+    await sleep()
+    expect(appendMock.mock.calls[0][0]).toContain('收入一共 ¥100')
+    // 第二轮：发"明细"，模型应结合 ctx 延续 income（不是 recent 全量）
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"query","query":{"type":"income"}}')
+    appendMock.mockClear()
+    await send(inst, '明细')
+    await sleep()
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions.filter((a) => a === 'stats').length).toBe(2) // 两轮都走 stats（income），不是 recent 全量
+    // 关键：第二轮主查询是 stats（income 延续），不是 recent（若误判成 recent 会走 list 作为主查询）
+    const lastAction = actions[actions.length - 1]
+    expect(lastAction).toBe('stats')
+    const msg2 = appendMock.mock.calls[0][0]
+    expect(msg2).toContain('收入一共 ¥100') // 仍显示收入汇总
+    expect(msg2).toContain('赚了')
+    expect(msg2).not.toContain('刮刮乐') // 不混支出
+  })
+
+  test('多轮上下文：先问收入 → 再发"那支出呢" → 切到 month 总览', async () => {
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'stats') return Promise.resolve({
+        result: {
+          success: true,
+          incomeTotal: 100,
+          expenseTotal: -263,
+          net: -163,
+          count: 9,
+          byCategory: [{ category: '餐饮', amount: -193 }, { category: '娱乐', amount: -50 }, { category: '购物', amount: -20 }],
+          records: [
+            { _id: 'r1', amount: -50, type: 'expense', category: '娱乐', note: '刮刮乐亏了', createdAt: new Date('2026-07-14T10:00:00') },
+            { _id: 'r3', amount: 100, type: 'income', category: '收入', note: '赚了', createdAt: new Date('2026-07-12T09:00:00') },
+          ],
+        },
+      })
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"query","query":{"type":"income"}}')
+    await send(inst, '收入多少')
+    await sleep()
+    jest.spyOn(inst, 'callModelForExtract').mockResolvedValueOnce('{"action":"query","query":{"type":"month"}}')
+    appendMock.mockClear()
+    await send(inst, '那支出呢')
+    await sleep()
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions.filter((a) => a === 'stats').length).toBe(2)
+    const msg2 = appendMock.mock.calls[0][0]
+    expect(msg2).toContain('这个月你一共花了') // month 总览
+    expect(msg2).toContain('¥263') // 支出总额
   })
 })
 

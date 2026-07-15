@@ -104,6 +104,36 @@ describe('classifyIntent 统一意图路由', () => {
     expect(r).toEqual({ action: 'query', query: { type: 'recent', only: 'income' } })
   })
 
+  test('多轮上下文：上一轮 income，"明细" → 延续 income（指代消解）', async () => {
+    const callModel = fakeCallModel('{"action":"query","query":{"type":"income"}}')
+    const ctx = { query: { type: 'income' }, summary: { type: 'income', incomeTotal: 100, incomeCount: 1 } }
+    const r = await classifyIntent('明细', callModel, { ctx })
+    expect(r).toEqual({ action: 'query', query: { type: 'income' } })
+  })
+
+  test('多轮上下文：上一轮 income，"那支出呢" → month（切维度，同时间段）', async () => {
+    const callModel = fakeCallModel('{"action":"query","query":{"type":"month"}}')
+    const ctx = { query: { type: 'income' }, summary: { type: 'income', incomeTotal: 100 } }
+    const r = await classifyIntent('那支出呢', callModel, { ctx })
+    expect(r.query.type).toBe('month')
+  })
+
+  test('多轮上下文：上一轮 month，"6月呢" → month + month:"2026-06"（换时间段）', async () => {
+    const callModel = fakeCallModel('{"action":"query","query":{"type":"month","month":"2026-06"}}')
+    const ctx = { query: { type: 'month', month: 'this' }, summary: { type: 'month', expenseTotal: -500 } }
+    const r = await classifyIntent('6月呢', callModel, { ctx })
+    expect(r.query.type).toBe('month')
+    expect(r.query.month).toBe('2026-06')
+  })
+
+  test('多轮上下文：本轮有明确新意图，"午饭38块" → record（上下文不干扰）', async () => {
+    const callModel = fakeCallModel('{"action":"record","amount":-38,"category":"餐饮","note":"午饭"}')
+    const ctx = { query: { type: 'income' }, summary: { type: 'income', incomeTotal: 100 } }
+    const r = await classifyIntent('午饭38块', callModel, { ctx })
+    expect(r.action).toBe('record')
+    expect(r.amount).toBe(-38)
+  })
+
   test('query: 未知 type 兜底为 month', async () => {
     const callModel = fakeCallModel('{"action":"query","query":{"type":"xxx"}}')
     const r = await classifyIntent('花了多少', callModel)
