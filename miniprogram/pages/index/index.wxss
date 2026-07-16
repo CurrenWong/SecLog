@@ -6,8 +6,31 @@
 
 /* 品牌头部 */
 .header {
+  position: relative;
   text-align: center;
   padding: 40rpx 0 32rpx;
+}
+
+/* 右上角个人中心入口 */
+.profile-entry {
+  position: absolute;
+  top: 32rpx;
+  right: 8rpx;
+}
+.profile-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #e8e8e8;
+  display: block;
+}
+
+.brand-logo {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 28rpx;
+  margin-bottom: 18rpx;
+  box-shadow: 0 6rpx 20rpx rgba(7, 193, 96, 0.18);
 }
 
 .brand {
@@ -72,8 +95,16 @@
 }
 
 .cta-icon {
-  font-size: 56rpx;
+  width: 72rpx;
+  height: 72rpx;
   margin-right: 24rpx;
+  border-radius: 16rpx;
+  background: #07c160;
+  color: #fff;
+  font-size: 56rpx;
+  line-height: 64rpx;
+  text-align: center;
+  font-weight: 300;
 }
 
 .cta-text {
@@ -117,6 +148,12 @@
   font-size: 30rpx;
   font-weight: 600;
   color: #333;
+}
+
+.recent-actions {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
 }
 
 .recent-more {

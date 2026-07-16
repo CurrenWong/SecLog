@@ -1,8 +1,12 @@
 <view class="home">
   <!-- 品牌头部 -->
   <view class="header">
-    <view class="brand">秒记</view>
+    <image class="brand-logo" src="/images/app-logo.png" mode="aspectFill" />
+    <view class="brand">秒记账</view>
     <view class="brand-sub">说话即记账 · AI 帮你管钱</view>
+    <view class="profile-entry" bind:tap="goProfile">
+      <image class="profile-avatar" src="{{avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill" />
+    </view>
   </view>
 
   <!-- 汇总卡片 -->
@@ -20,19 +24,22 @@
 
   <!-- 主入口 -->
   <view class="cta" bind:tap="goChat">
-    <view class="cta-icon">💬</view>
+    <view class="cta-icon">+</view>
     <view class="cta-text">
       <view class="cta-title">开始记账</view>
       <view class="cta-sub">说一句"午饭38"就记好了</view>
     </view>
-    <view class="cta-arrow">›</view>
+    <view class="cta-arrow">></view>
   </view>
 
   <!-- 最近记录 -->
   <view class="recent">
     <view class="recent-head">
       <text class="recent-title">最近记录</text>
-      <text class="recent-more" bind:tap="goChat">记一笔 ›</text>
+      <view class="recent-actions">
+        <text class="recent-more" bind:tap="goRecords">查看明细 ></text>
+        <text class="recent-more" bind:tap="goChat">记一笔 ></text>
+      </view>
     </view>
 
     <view wx:if="{{loading}}" class="empty">加载中…</view>
@@ -52,5 +59,5 @@
   </view>
 
   <!-- 引导入口 -->
-  <view class="guide-entry" bind:tap="goGuide">如何使用秒记 ›</view>
+  <view class="guide-entry" bind:tap="goGuide">如何使用秒记账 ></view>
 </view>

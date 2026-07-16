@@ -63,10 +63,10 @@ describe('miaojiRecord 云函数', () => {
       expect(r.list[0].note).toBe('c')
     })
 
-    test('limit 超过 50 被截断', async () => {
-      for (let i = 0; i < 60; i++) await call('add', { amount: -1, note: 'x' + i }, { OPENID: 'u' })
+    test('limit 超过 200 被截断', async () => {
+      for (let i = 0; i < 210; i++) await call('add', { amount: -1, note: 'x' + i }, { OPENID: 'u' })
       const r = await call('list', { limit: 999 }, { OPENID: 'u' })
-      expect(r.list.length).toBe(50)
+      expect(r.list.length).toBe(200)
     })
 
     test('owner 隔离：只返回自己的记录', async () => {

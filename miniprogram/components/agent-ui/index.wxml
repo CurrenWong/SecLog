@@ -84,7 +84,7 @@
         <!-- model 模式下的头像，只在 model 模式下展示 -->
         <view wx:if="{{chatMode === 'model'}}" class="nav">
           <image src="{{modelConfig.logo}}" mode="aspectFill" class="avatar" />
-          <view style="line-height: 47px; font-size: 20px; font-weight: 500;">{{modelConfig.modelProvider}}</view>
+          <view style="line-height: 47px; font-size: 20px; font-weight: 500;">秒记账</view>
           <view style="line-height: 26px;padding: 0px 16px; font-size: 32rpx;">{{modelConfig.welcomeMsg}}</view>
         </view>
         <block wx-if="{{!isAgent}}" wx:for="{{chatRecords}}" wx:key="record_id">

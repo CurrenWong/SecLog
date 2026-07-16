@@ -24,7 +24,9 @@
 - ↩️ **撤回 / 更正**："记错了" 撤回最近一笔；"想起来错了，是60" 更正金额
 - 📊 **首页汇总**：今日 / 本月收支 + 最近 5 笔，下拉刷新
 - 🛡️ **误记防护**：裸数字（"我身高180""墙高3块砖"）不记账；含消费意图词（"午饭38"）才记
-- 📷 **拍照记账**（规划中）：上传小票，AI 提取金额与商家
+- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票后由云函数 `cloud.ai()` + `qwen3.5-flash` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、默认不预填防错账）再入库
+- 👤 **登录 + 个人中心**（已上线）：进入自动静默登录（云函数 `login` 取 openid/unionid，落地 `users` 集合）；个人中心可改头像（chooseAvatar 上传 `avatars/`）/昵称、看本月汇总与笔数、退出登录
+- 📋 **记账明细页**（已上线）：按最近 30 天列出全部记录，支持编辑（金额/类别/备注）与删除，数据按 openid 隔离
 
 ## 架构
 
@@ -40,6 +42,18 @@
       query    → miaojiRecord(stats/summary/list) + 📊 模板（真实数据，代码生成）
       undo     → miaojiRecord(list+delete) + 🗑️ 卡片
       chat     → 放行 agent-ui 模型自由对话（唯一模型发声的分支）
+
+**拍照记账分支**（对话页浮动按钮触发）：
+```
+选图 → wx.cloud.uploadFile(ocr_tmp/) → miaojiRecord(ocr, {imageUrl:fileID})
+     → 云函数 cloud.ai() + qwen3.5-flash 多模态识别 → {amount,merchant,category,date}
+     → 前端确认卡片（金额可改、默认不预填） → miaojiRecord(add)
+```
+
+**登录分支**（app.js `onLaunch` 静默调用）：
+```
+miaojiRecord(login) → 取 openid/unionid，upsert users 集合
+前端写缓存 userInfo → 个人中心 updateProfile 回写头像/昵称
 ```
 
 **多轮上下文**：
@@ -67,9 +81,11 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 ├── miniprogram/                 ← ⭐ 小程序代码（已纳入 git 版本控制）
 │   ├── pages/
 │   │   ├── index/              ← 首页：品牌 + 收支汇总 + 最近记录 + 入口
-│   │   ├── chatBot/            ← 记账对话页（agent-ui 组件，bot 模式）
-│   │   │   └── chatBot.js      ← ⭐ 意图路由 + 多轮上下文 + 查询模板（核心）
-│   │   └── guide/              ← 使用引导页（独立入口）
+│   │   ├── chatBot/            ← 记账对话页（agent-ui 组件，bot 模式）+ 拍照记账浮动按钮
+│   │   │   └── chatBot.js      ← ⭐ 意图路由 + 多轮上下文 + 查询模板 + 拍照 OCR 确认流（核心）
+│   │   ├── guide/              ← 使用引导页（独立入口）
+│   │   ├── profile/            ← 个人中心：头像/昵称/本月汇总/退出登录
+│   │   └── records/           ← 记账明细：列表 + 编辑 + 删除（最近 30 天）
 │   ├── components/
 │   │   ├── agent-ui/           ← 对话主体组件（含工具卡片渲染）
 │   │   └── toolCard/           ← 地图/天气/商家等工具卡（agent-ui 依赖，勿删）
@@ -80,7 +96,9 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 │   ├── app.js / app.json / app.wxss
 │   └── package.json / sitemap.json
 ├── cloudfunctions/
-│   └── miaojiRecord/           ← ⭐ 记账云函数（add/list/delete/summary/stats，按 openid 隔离）
+│   └── miaojiRecord/           ← ⭐ 记账云函数（add/list/delete/summary/stats/ocr/login/updateProfile，按 openid 隔离）
+├── avatars/                     ← 用户头像（chooseAvatar 上传的云存储落地目录镜像，git 跟踪占位）
+├── images/                      ← 小程序静态图（app-logo / default-avatar 等）
 ├── ci-tools/                   ← ⭐ 本地测试 + 编译（Jest + compile.js 出真机二维码）
 │   ├── tests/                  ← 141 用例（意图路由 / 云函数 / 多轮 / 页面集成）
 │   └── compile.js              ← 微信开发者工具 CLI 编译，生成真机预览二维码
@@ -139,7 +157,9 @@ npm i -g @cloudbase/cli
 | 多轮上下文（滑动窗口 10 轮 + 远处摘要） | ✅ 已上线 |
 | 被动填槽（记一笔→追问→补全） | ✅ 已上线 |
 | 本地测试 | ✅ 141 用例全绿 |
-| 拍照记账 | 🟡 规划中 |
+| 拍照记账 | ✅ 已上线（云函数 cloud.ai() + qwen3.5-flash 多模态识别） |
+| 登录 + 个人中心 | ✅ 已上线（静默登录 + users 集合 + 头像/昵称编辑） |
+| 记账明细页 | ✅ 已上线（列表 / 编辑 / 删除，openid 隔离） |
 | `quickstartFunctions` | 🟡 早期压测 demo，与产品无关，可删 |
 
 ## 文档参考
@@ -150,4 +170,12 @@ npm i -g @cloudbase/cli
 
 ---
 
-**最后更新**: 2026-07-15 — 架构改为前端直连大模型判意图 + 云函数读写；上线自然语言查询 / 多轮上下文 / 被动填槽；本地测试 141 用例；README 重写
+**最后更新**: 2026-07-16 — 上线拍照记账（cloud.ai()+qwen3.5-flash 多模态）、登录+个人中心、记账明细页；品牌更名「秒记」→「秒记账」；README 同步更新
+
+---
+
+## ⚠️ 部署提醒（改完必看）
+
+- **云函数改完必须重传**：`miaojiRecord` 的 `ocr`/`login`/`updateProfile` 是新增 action，已在 `seclog-d1g8no5pc45e643aa` 环境部署过；但**本地改了 ≠ 线上跑新版**，每次改云函数代码都要 `./uploadCloudFunction.sh` 重新上传（见「云函数部署」一节）。
+- **wx-server-sdk 版本**：`cloud.ai()` 通道需要 `wx-server-sdk >= 3.x`，老版本 2.6.3 无此 API，会在 `ocr` 时返回 `AI_UNAVAILABLE`。
+- **前端静默登录**：`app.js` 在 `onLaunch` 调 `miaojiRecord(login)`；若未部署 `login` action，个人中心会拿不到 openid 但记账仍按 openid 隔离正常工作。

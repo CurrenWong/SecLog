@@ -10,6 +10,7 @@ beforeAll(() => {
     cloud: { callFunction: callFunctionMock },
     navigateTo: jest.fn(),
     stopPullDownRefresh: jest.fn(),
+    getStorageSync: jest.fn().mockReturnValue({}), // 静默登录缓存（默认空）
   }
 })
 

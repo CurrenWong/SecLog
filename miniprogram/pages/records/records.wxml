@@ -1,0 +1,80 @@
+<view class="records-page">
+  <!-- 汇总条 -->
+  <view class="summary-bar">
+    <view class="sum-col">
+      <view class="sum-label">笔数</view>
+      <view class="sum-val">{{total}}</view>
+    </view>
+    <view class="sum-col">
+      <view class="sum-label">支出</view>
+      <view class="sum-val expense">¥{{totalExpense}}</view>
+    </view>
+    <view class="sum-col">
+      <view class="sum-label">收入</view>
+      <view class="sum-val income">¥{{totalIncome}}</view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:elif="{{records.length === 0}}" class="empty">最近一个月还没有记录</view>
+
+  <view wx:else class="table">
+    <view class="tr th">
+      <view class="td td-date">日期</view>
+      <view class="td td-cat">分类</view>
+      <view class="td td-note">备注</view>
+      <view class="td td-amount">金额</view>
+      <view class="td td-op"></view>
+    </view>
+    <view class="tr" wx:for="{{records}}" wx:key="_id">
+      <view class="td td-date">
+        <view>{{item.dateStr}}</view>
+        <view class="td-time">{{item.timeStr}}</view>
+      </view>
+      <view class="td td-cat">{{item.category}}</view>
+      <view class="td td-note">{{item.note || '-'}}</view>
+      <view class="td td-amount {{item.type === 'income' ? 'income' : 'expense'}}">
+        {{item.type === 'income' ? '+' : '-'}}¥{{item.amount < 0 ? -item.amount : item.amount}}
+      </view>
+      <view class="td td-op">
+        <view class="edit-btn" data-id="{{item._id}}" bind:tap="onEdit">改</view>
+        <view class="del-btn" data-id="{{item._id}}" bind:tap="onDelete">删</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 编辑弹窗 -->
+  <view wx:if="{{showEdit}}" class="edit-mask" bind:tap="onMaskTap">
+    <view class="edit-card" catch:tap="noop">
+      <view class="edit-title">修改记录</view>
+
+      <view class="edit-row">
+        <text class="edit-label">类型</text>
+        <view class="seg">
+          <view class="seg-item {{editForm.type === 'expense' ? 'on' : ''}}" data-type="expense" catch:tap="onTypeTap">支出</view>
+          <view class="seg-item {{editForm.type === 'income' ? 'on' : ''}}" data-type="income" catch:tap="onTypeTap">收入</view>
+        </view>
+      </view>
+
+      <view class="edit-row">
+        <text class="edit-label">金额</text>
+        <input class="edit-input" type="digit" value="{{editForm.amount}}" placeholder="0.00" bindinput="onAmountInput" />
+      </view>
+
+      <view class="edit-row">
+        <text class="edit-label">分类</text>
+        <input class="edit-input" value="{{editForm.category}}" placeholder="餐饮" bindinput="onCategoryInput" />
+      </view>
+
+      <view class="edit-row">
+        <text class="edit-label">备注</text>
+        <input class="edit-input" value="{{editForm.note}}" placeholder="可选" bindinput="onNoteInput" />
+      </view>
+
+      <view class="edit-actions">
+        <view class="edit-cancel" bind:tap="closeEdit">取消</view>
+        <view class="edit-save" bind:tap="onSaveEdit">保存</view>
+      </view>
+    </view>
+  </view>
+</view>

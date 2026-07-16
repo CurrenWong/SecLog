@@ -2,7 +2,9 @@
   "pages": [
     "pages/index/index",
     "pages/chatBot/chatBot",
-    "pages/guide/guide"
+    "pages/guide/guide",
+    "pages/profile/profile",
+    "pages/records/records"
   ],
   "usingComponents": {
     "custom-map": "/components/toolCard/map/index",
@@ -13,7 +15,7 @@
   "window": {
     "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "秒记",
+    "navigationBarTitleText": "秒记账",
     "backgroundColor": "#f7f8fa",
     "backgroundTextStyle": "light",
     "enablePullDownRefresh": true

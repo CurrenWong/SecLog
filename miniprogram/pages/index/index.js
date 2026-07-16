@@ -3,11 +3,15 @@ Page({
     summary: { day: { income: 0, expense: 0 }, month: { income: 0, expense: 0 } },
     recent: [],
     loading: true,
+    avatarUrl: '',
     _fetching: false, // 防重复调用
   },
 
   onShow() {
     this.loadData()
+    // 同步头像（个人中心改了后回到首页实时更新）
+    const info = wx.getStorageSync('userInfo') || {}
+    this.setData({ avatarUrl: info.avatarUrl || '' })
   },
 
   loadData() {
@@ -70,8 +74,16 @@ Page({
     wx.navigateTo({ url: '/pages/chatBot/chatBot' })
   },
 
+  goRecords() {
+    wx.navigateTo({ url: '/pages/records/records' })
+  },
+
   goGuide() {
     wx.navigateTo({ url: '/pages/guide/guide' })
+  },
+
+  goProfile() {
+    wx.navigateTo({ url: '/pages/profile/profile' })
   },
 
   onPullDownRefresh() {

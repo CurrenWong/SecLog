@@ -2,4 +2,51 @@
 <view>
   <agent-ui id="agentui" agentConfig="{{agentConfig}}" showBotAvatar="{{showBotAvatar}}" chatMode="{{chatMode}}" modelConfig="{{modelConfig}}" systemPrompt="{{systemPrompt}}" envShareConfig="{{envShareConfig}}" bind:userSend="onUserSend" bind:messageDone="onMessageDone">
   </agent-ui>
+
+  <!-- 拍照记账浮动按钮（纯 CSS 相机图标，不依赖系统 emoji 字体） -->
+  <view class="photo-fab" bindtap="onPhotoAccount">
+    <view class="photo-fab-icon">
+      <view class="cam-body"></view>
+      <view class="cam-lens"></view>
+      <view class="cam-flash"></view>
+    </view>
+    <text class="photo-fab-text">拍照记账</text>
+  </view>
+
+  <!-- OCR 确认弹窗 -->
+  <view wx:if="{{showOcrModal}}" class="ocr-mask" bindtap="onOcrCancel">
+    <view class="ocr-card" catchtap="noop">
+      <view class="ocr-title">确认记账</view>
+
+      <view class="ocr-row">
+        <text class="ocr-label">金额</text>
+        <input class="ocr-input" type="digit" value="{{ocrResult.amount}}" placeholder="0.00" bindinput="onOcrAmountInput" />
+      </view>
+
+      <view class="ocr-row">
+        <text class="ocr-label">商家</text>
+        <input class="ocr-input" value="{{ocrResult.merchant}}" placeholder="未知" bindinput="onOcrMerchantInput" />
+      </view>
+
+      <view class="ocr-row">
+        <text class="ocr-label">类别</text>
+        <picker mode="selector" range="{{['餐饮','交通','购物','居家','医疗','娱乐','教育','其他']}}" value="{{['餐饮','交通','购物','居家','医疗','娱乐','教育','其他'].indexOf(ocrResult.category)}}" bindchange="onOcrCategoryChange">
+          <view class="ocr-picker">{{ocrResult.category}}</view>
+        </picker>
+      </view>
+
+      <view class="ocr-actions">
+        <button class="ocr-btn ocr-btn-cancel" bindtap="onOcrCancel">取消</button>
+        <button class="ocr-btn ocr-btn-confirm" bindtap="onOcrConfirm">确认记账</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 识别中 loading -->
+  <view wx:if="{{ocrLoading}}" class="ocr-loading">
+    <view class="ocr-loading-box">
+      <view class="ocr-spinner"></view>
+      <text>识别小票中…</text>
+    </view>
+  </view>
 </view>

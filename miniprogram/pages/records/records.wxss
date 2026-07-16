@@ -1,0 +1,260 @@
+.records-page {
+  min-height: 100vh;
+  background: #f7f8fa;
+  padding: 20rpx 24rpx 40rpx;
+  box-sizing: border-box;
+}
+
+.summary-bar {
+  display: flex;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 28rpx 0;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.sum-col {
+  flex: 1;
+  text-align: center;
+  border-right: 1rpx solid #eee;
+}
+
+.sum-col:last-child {
+  border-right: none;
+}
+
+.sum-label {
+  font-size: 24rpx;
+  color: #999;
+  margin-bottom: 8rpx;
+}
+
+.sum-val {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #222;
+}
+
+.sum-val.expense {
+  color: #fa5151;
+}
+
+.sum-val.income {
+  color: #07c160;
+}
+
+.empty {
+  text-align: center;
+  color: #999;
+  font-size: 28rpx;
+  padding: 80rpx 0;
+}
+
+.table {
+  background: #fff;
+  border-radius: 16rpx;
+  overflow: hidden;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.tr {
+  display: flex;
+  align-items: center;
+  padding: 22rpx 16rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.tr:last-child {
+  border-bottom: none;
+}
+
+.th {
+  background: #fafafa;
+  font-size: 24rpx;
+  color: #999;
+  font-weight: 600;
+}
+
+.td {
+  font-size: 26rpx;
+  color: #333;
+  padding: 0 8rpx;
+  box-sizing: border-box;
+}
+
+.td-date {
+  width: 120rpx;
+  flex-shrink: 0;
+}
+
+.td-time {
+  font-size: 20rpx;
+  color: #bbb;
+  margin-top: 4rpx;
+}
+
+.td-cat {
+  width: 100rpx;
+  flex-shrink: 0;
+}
+
+.td-note {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #666;
+  padding-right: 12rpx;
+}
+
+.td-amount {
+  width: 170rpx;
+  flex-shrink: 0;
+  text-align: right;
+  font-weight: 600;
+}
+
+.td-amount.expense {
+  color: #fa5151;
+}
+
+.td-amount.income {
+  color: #07c160;
+}
+
+.td-op {
+  width: 120rpx;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10rpx;
+  margin-left: 8rpx;
+}
+
+.td-op {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.del-btn {
+  font-size: 24rpx;
+  color: #fa5151;
+  padding: 6rpx 14rpx;
+  border: 1rpx solid #fa5151;
+  border-radius: 8rpx;
+}
+
+.edit-btn {
+  font-size: 24rpx;
+  color: #07c160;
+  padding: 6rpx 14rpx;
+  border: 1rpx solid #07c160;
+  border-radius: 8rpx;
+}
+
+/* 编辑弹窗 */
+.edit-mask {
+  position: fixed;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.edit-card {
+  width: 600rpx;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 40rpx 36rpx 30rpx;
+  box-sizing: border-box;
+}
+
+.edit-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #222;
+  text-align: center;
+  margin-bottom: 30rpx;
+}
+
+.edit-row {
+  display: flex;
+  align-items: center;
+  min-height: 88rpx;
+  margin-bottom: 24rpx;
+}
+
+.edit-label {
+  width: 100rpx;
+  font-size: 28rpx;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.edit-input {
+  flex: 1;
+  height: 72rpx;
+  line-height: 72rpx;
+  border: 1rpx solid #e5e5e5;
+  border-radius: 10rpx;
+  padding: 0 18rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.seg {
+  flex: 1;
+  display: flex;
+  gap: 20rpx;
+}
+
+.seg-item {
+  flex: 1;
+  height: 72rpx;
+  line-height: 72rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: #666;
+  border: 1rpx solid #e5e5e5;
+  border-radius: 10rpx;
+  box-sizing: border-box;
+}
+
+.seg-item.on {
+  color: #07c160;
+  border-color: #07c160;
+  background: rgba(7, 193, 96, 0.06);
+}
+
+.edit-actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 20rpx;
+}
+
+.edit-cancel,
+.edit-save {
+  flex: 1;
+  text-align: center;
+  padding: 20rpx 0;
+  border-radius: 12rpx;
+  font-size: 30rpx;
+}
+
+.edit-cancel {
+  color: #666;
+  background: #f5f5f5;
+}
+
+.edit-save {
+  color: #fff;
+  background: #07c160;
+}

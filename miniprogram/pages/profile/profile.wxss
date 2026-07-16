@@ -1,0 +1,124 @@
+.profile {
+  min-height: 100vh;
+  background: #f7f8fa;
+  padding: 32rpx 24rpx;
+  box-sizing: border-box;
+}
+
+/* 头部 */
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40rpx 0 32rpx;
+}
+.avatar-btn {
+  position: relative;
+  width: 140rpx;
+  height: 140rpx;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  line-height: normal;
+  border: none;
+}
+.avatar-btn::after {
+  border: none;
+}
+.avatar {
+  width: 140rpx;
+  height: 140rpx;
+  border-radius: 50%;
+  background: #e8e8e8;
+}
+.avatar-edit {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #07c160;
+  color: #fff;
+  font-size: 22rpx;
+  text-align: center;
+  line-height: 44rpx;
+}
+.nick-wrap {
+  margin-top: 20rpx;
+}
+.nick-input {
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1a1a1a;
+  min-width: 200rpx;
+}
+
+/* 汇总卡片 */
+.stat-card {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 36rpx 0;
+  margin: 24rpx 0;
+  box-shadow: 0 4rpx 16rpx rgba(0,0,0,0.04);
+}
+.stat-col {
+  flex: 1;
+  text-align: center;
+}
+.stat-label {
+  font-size: 24rpx;
+  color: #999;
+  margin-bottom: 12rpx;
+}
+.stat-value {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+.stat-value.expense { color: #fa5151; }
+.stat-value.income { color: #07c160; }
+.stat-divider {
+  width: 1rpx;
+  height: 56rpx;
+  background: #eee;
+}
+
+/* 设置列表 */
+.cell-group {
+  background: #fff;
+  border-radius: 20rpx;
+  overflow: hidden;
+  margin-top: 16rpx;
+}
+.cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32rpx 28rpx;
+  border-bottom: 1rpx solid #f2f2f2;
+}
+.cell:last-child {
+  border-bottom: none;
+}
+.cell-label {
+  font-size: 30rpx;
+  color: #1a1a1a;
+}
+.cell-label.logout {
+  color: #fa5151;
+}
+.cell-arrow {
+  font-size: 36rpx;
+  color: #ccc;
+}
+
+.foot {
+  text-align: center;
+  font-size: 22rpx;
+  color: #bbb;
+  margin-top: 48rpx;
+}

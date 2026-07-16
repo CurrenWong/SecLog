@@ -1,0 +1,45 @@
+<view class="profile">
+  <!-- 头部：头像 + 昵称 -->
+  <view class="header">
+    <button class="avatar-btn" open-type="chooseAvatar" bind:chooseavatar="onChooseAvatar">
+      <image class="avatar" src="{{avatarUrl || '/images/default-avatar.png'}}" mode="aspectFill" />
+      <view class="avatar-edit">改</view>
+    </button>
+    <view class="nick-wrap">
+      <input class="nick-input" type="nickname" placeholder="点击设置昵称" value="{{nickName}}"
+             bindinput="onNickNameInput" bindblur="onNickNameBlur" confirm-type="done" />
+    </view>
+  </view>
+
+  <!-- 本月汇总 -->
+  <view class="stat-card">
+    <view class="stat-col">
+      <view class="stat-label">本月支出</view>
+      <view class="stat-value expense">¥{{summary.month.expense}}</view>
+    </view>
+    <view class="stat-divider"></view>
+    <view class="stat-col">
+      <view class="stat-label">本月收入</view>
+      <view class="stat-value income">¥{{summary.month.income}}</view>
+    </view>
+    <view class="stat-divider"></view>
+    <view class="stat-col">
+      <view class="stat-label">记账笔数</view>
+      <view class="stat-value">{{summary.count}}</view>
+    </view>
+  </view>
+
+  <!-- 设置列表 -->
+  <view class="cell-group">
+    <view class="cell" bind:tap="onAbout">
+      <text class="cell-label">关于秒记账</text>
+      <text class="cell-arrow">›</text>
+    </view>
+    <view class="cell" bind:tap="onLogout">
+      <text class="cell-label logout">退出登录</text>
+      <text class="cell-arrow">›</text>
+    </view>
+  </view>
+
+  <view class="foot">数据按微信账号隔离 · 仅你可见</view>
+</view>

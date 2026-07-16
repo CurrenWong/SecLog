@@ -88,7 +88,7 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
 
     expect(appendMock).toHaveBeenCalledTimes(1)
     const msg = appendMock.mock.calls[0][0]
-    expect(msg).toContain('✅ 已记')
+    expect(msg).toContain('[已记]')
     expect(msg).toContain('餐饮')
     expect(msg).toContain('-¥38')
     expect(msg).not.toContain('大概') // 确定值不带核实语气
@@ -126,7 +126,7 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     // 撤回确认卡片出现
     expect(appendMock).toHaveBeenCalled()
     const msg = appendMock.mock.calls[appendMock.mock.calls.length - 1][0]
-    expect(msg).toContain('🗑️ 已撤回')
+    expect(msg).toContain('已撤回')
     // 调了 list + delete，没调 add（没记账）
     const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
     expect(actions).toContain('list')
@@ -143,7 +143,7 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
     expect(actions).toContain('add')
     expect(appendMock).toHaveBeenCalled()
-    expect(appendMock.mock.calls[0][0]).toContain('✅ 已记')
+    expect(appendMock.mock.calls[0][0]).toContain('[已记]')
   })
 
   test('查询意图 → 模型判 query → tryQuery 走 stats（不 add，不记账）', async () => {
@@ -156,7 +156,7 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     expect(actions).toContain('stats')
     expect(actions).not.toContain('add') // 查询不记账
     expect(appendMock).toHaveBeenCalled() // 📊 模板回复出现
-    expect(appendMock.mock.calls[0][0]).toContain('📊')
+    expect(appendMock.mock.calls[0][0]).toContain('这个月你一共花了')
   })
 
   test('按分类统计 → 模型判 breakdown → tryQuery 走 stats（全部分类，不报错）', async () => {
@@ -309,7 +309,7 @@ describe('A1 chatBot 页面集成：发消息 → 对话流出现 ✅ 卡片', (
     const addCall = callFunctionMock.mock.calls.find((c) => c[0].data.action === 'add')
     expect(addCall[0].data.payload.amount).toBe(-38)
     expect(addCall[0].data.payload.category).toBe('餐饮')
-    expect(appendMock.mock.calls[0][0]).toContain('✅ 已记')
+    expect(appendMock.mock.calls[0][0]).toContain('[已记]')
   })
 
   test('history 累积：两轮对话后 _history 含 user+assistant 各 2 条', async () => {
@@ -421,7 +421,7 @@ describe('更正流程（correct 意图 → update 最近一笔）', () => {
     const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
     expect(actions).toContain('update')
     expect(actions).not.toContain('add') // 更正不是新增
-    expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('✅ 已更正'))
+    expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('已更正'))
     expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('-¥60'))
   })
 })
@@ -447,9 +447,9 @@ describe('查询回复 buildQueryReply（真实明细，不依赖模型编造）
     const msg = inst.buildQueryReply(q, result)
     expect(msg).toContain('这个月你一共花了 ¥560')
     expect(msg).toContain('收入 ¥8000')
-    expect(msg).toContain('【交通】')
+    expect(msg).toContain('交通：')
     expect(msg).toContain('打车 -¥360')
-    expect(msg).toContain('【餐饮】')
+    expect(msg).toContain('餐饮：')
     expect(msg).toContain('午饭 -¥200')
     expect(msg).toContain('7月10日')
     expect(msg).toContain('7月8日')

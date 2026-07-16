@@ -3,9 +3,9 @@
 //
 // 架构（Curren 2026-07-14 确认）：模型先做意图判断，代码按 action 选分支执行。
 //   用户输入 → classifyIntent（大模型判意图，正则抽线索喂它）→ {action: record|query|undo|chat|correct}
-//     record/correct → 写库 + ✅ 卡片（金额正则保底，模型补抽模糊值）
-//     query          → 查库 + 📊 模板（真实数据，代码生成，绝不幻觉）
-//     undo           → 删最近一笔 + 🗑️ 卡片
+//     record/correct → 写库 +  卡片（金额正则保底，模型补抽模糊值）
+//     query          → 查库 +  模板（真实数据，代码生成，绝不幻觉）
+//     undo           → 删最近一笔 +  卡片
 //     chat           → 放行 agent-ui 模型自由对话（唯一模型发声的分支）
 //   关键：模型在一轮里只输出意图 JSON，绝不输出给用户看的散文；
 //        非 chat 分支抑制 agent-ui 模型回复（suppressModelOnce），只显示代码确定性卡片。
@@ -31,8 +31,8 @@ Page({
     modelConfig: {
       modelProvider: "cloudbase",
       quickResponseModel: "hy3",
-      logo: "",
-      welcomeMsg: "你好，我是秒记 💡 说出你的消费，我来帮你记。例如：午饭花了38块",
+      logo: "/images/app-logo.png",
+      welcomeMsg: "你好，我是秒记账，说出你的消费，我来帮你记。例如：午饭花了38块",
     },
     // 系统提示词：仅在 chat（闲聊）分支生效——此时 agent-ui 模型自由对话。
     // record/query/undo/correct 分支模型根本不通过 agent-ui 发声（被 suppress），
@@ -44,6 +44,12 @@ Page({
     // _ctx：最近一次 query 的 { query, summary }（远处摘要基础，history 超出 10 轮时压缩用）
     _history: [],
     _ctx: null,
+
+    // 拍照记账：OCR 结果确认弹窗状态
+    showOcrModal: false,
+    ocrLoading: false,
+    ocrResult: null, // { amount, merchant, category, date }
+    ocrError: '',
   },
 
   // 用户输入发送时触发（agent-ui 抛出）
@@ -169,7 +175,7 @@ Page({
       // 云函数 list 返回 { success, list: [...] }（字段名 list，非 data）
       const list = (res.result && res.result.success && res.result.list) || [];
       if (!list.length) {
-        self.appendUndoMsg('ℹ️ 没有可撤回的记录');
+        self.appendUndoMsg('没有可撤回的记录');
         wx.showToast({ title: '没有记录', icon: 'none' });
         return;
       }
@@ -180,7 +186,7 @@ Page({
       }).then((del) => {
         if (del.result && del.result.success) {
           const sign = last.amount < 0 ? '-' : '+';
-          self.appendUndoMsg(`🗑️ 已撤回：**${last.category}** ${sign}¥${Math.abs(last.amount)}`);
+          self.appendUndoMsg(` 已撤回：**${last.category}** ${sign}¥${Math.abs(last.amount)}`);
           wx.showToast({ title: '已撤回', icon: 'success' });
         } else {
           wx.showToast({ title: '撤回失败', icon: 'none' });
@@ -247,8 +253,8 @@ Page({
         const sign = amount < 0 ? '-' : '+'
         const notePart = note ? '（' + note + '）' : ''
         const confirm = source === 'model'
-          ? '✅ 已记：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart + '，数额不对随时跟我说改~'
-          : '✅ 已记：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
+          ? '[已记] **' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart + '，数额不对随时跟我说改~'
+          : ' 已记：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
         const comp = self.selectComponent('#agentui')
         if (comp && comp.appendAssistantMessage) comp.appendAssistantMessage(confirm)
         self.pushHistory({ role: 'assistant', text: confirm })
@@ -283,7 +289,7 @@ Page({
           const sign = amount < 0 ? '-' : '+'
           const notePart = note ? '（' + note + '）' : ''
           const comp = self.selectComponent('#agentui')
-          const correctMsg = '✅ 已更正：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
+          const correctMsg = ' 已更正：**' + category + '** ' + sign + '¥' + Math.abs(amount) + notePart
           if (comp && comp.appendAssistantMessage) {
             comp.appendAssistantMessage(correctMsg)
           }
@@ -333,7 +339,7 @@ Page({
       data: { action, payload },
     }).then((res) => {
       if (!res.result || !res.result.success) {
-        self.appendQueryMsg('😅 查询出错了，稍后再试试')
+        self.appendQueryMsg(' 查询出错了，稍后再试试')
         return
       }
       const msg = self.buildQueryReply(q, res.result)
@@ -342,7 +348,7 @@ Page({
       self.setData({ _ctx: { query: q, summary: self.summarizeResult(q, res.result) } })
     }).catch((err) => {
       console.error('miaojiRecord query failed', err)
-      self.appendQueryMsg('😅 查询出错了，稍后再试试')
+      self.appendQueryMsg(' 查询出错了，稍后再试试')
     })
   },
 
@@ -374,8 +380,8 @@ Page({
     const fmt = (n) => '¥' + Math.abs(n).toFixed(0)
     if (q.type === 'day') {
       const d = result.day || { income: 0, expense: 0 }
-      if (d.expense === 0 && d.income === 0) return '📊 今天还没记账呢，说一笔我帮你记上~'
-      let s = '📊 今天：支出 ' + fmt(d.expense)
+      if (d.expense === 0 && d.income === 0) return ' 今天还没记账呢，说一笔我帮你记上~'
+      let s = ' 今天：支出 ' + fmt(d.expense)
       if (d.income > 0) s += '，收入 ' + fmt(d.income)
       return s
     }
@@ -384,28 +390,28 @@ Page({
       // only 过滤：income 只看收入，expense 只看支出（"收入明细"场景）
       if (q.only === 'income') list = list.filter((r) => r.type === 'income')
       else if (q.only === 'expense') list = list.filter((r) => r.type !== 'income')
-      if (!list.length) return '📊 还没有任何记录哦，说一笔我帮你记~'
+      if (!list.length) return ' 还没有任何记录哦，说一笔我帮你记~'
       const lines = list.slice(0, 8).map((r, i) => {
         const sign = r.type === 'income' ? '+' : '-'
         const cat = r.category || '其他'
         return (i + 1) + '. ' + cat + ' ' + sign + fmt(r.amount) + (r.note ? '（' + r.note + '）' : '')
       })
       const label = q.only === 'income' ? '收入' : q.only === 'expense' ? '支出' : ''
-      return '📊 最近记的' + (label ? label : '') + list.length + ' 笔：\n' + lines.join('\n')
+      return '【最近记的' + (label ? label : '') + list.length + ' 笔】\n' + lines.join('\n')
     }
     if (q.type === 'breakdown') {
       // 按分类统计支出：列出所有有支出的分类及金额（来自云函数 byCategory）
       const cats = result.byCategory || []
-      if (!cats.length) return '📊 这个月还没记账呢，说一笔我帮你记上~'
+      if (!cats.length) return ' 这个月还没记账呢，说一笔我帮你记上~'
       const lines = cats.map((c) => '· ' + c.category + ' ' + fmt(c.amount) + '（' + (c.count || 0) + ' 笔）')
-      return '📊 这个月按分类统计（支出）：\n' + lines.join('\n')
+      return ' 这个月按分类统计（支出）：\n' + lines.join('\n')
     }
     if (q.type === 'income') {
       // 收入汇总：来自 stats 的 incomeTotal；并列出真实收入笔记录（过滤 records 中的 income 行）
       const income = result.incomeTotal || 0
-      if (income === 0) return '📊 这个月还没有任何收入记录呢，说一笔我帮你记~'
+      if (income === 0) return ' 这个月还没有任何收入记录呢，说一笔我帮你记~'
       const incomeRecords = (result.records || []).filter((r) => r.type === 'income')
-      let s = '📊 这个月收入一共 ' + fmt(income) + '（' + incomeRecords.length + ' 笔）'
+      let s = ' 这个月收入一共 ' + fmt(income) + '（' + incomeRecords.length + ' 笔）'
       if (incomeRecords.length) {
         const lines = incomeRecords.map((r) => {
           const d = r.createdAt ? new Date(r.createdAt) : null
@@ -419,8 +425,8 @@ Page({
     if (q.type === 'category') {
       const amount = result.amount || 0
       const count = result.count || 0
-      if (amount === 0) return '📊 这个月还没记过「' + q.category + '」呢~'
-      return '📊 这个月「' + q.category + '」一共花了 ' + fmt(amount) + '（' + count + ' 笔）'
+      if (amount === 0) return ' 这个月还没记过「' + q.category + '」呢~'
+      return ' 这个月「' + q.category + '」一共花了 ' + fmt(amount) + '（' + count + ' 笔）'
     }
     // month
     const expense = result.expenseTotal || 0
@@ -428,9 +434,9 @@ Page({
     const net = result.net || 0
     const count = result.count || 0
     if (count === 0) {
-      return '📊 这个月还没记账呢，说一笔我帮你记上~'
+      return ' 这个月还没记账呢，说一笔我帮你记上~'
     }
-    let s = '📊 这个月你一共花了 ' + fmt(expense)
+    let s = ' 这个月你一共花了 ' + fmt(expense)
     if (income > 0) s += '，收入 ' + fmt(income) + '，净 ' + (net < 0 ? '-' : '+') + fmt(net)
     const cats = result.byCategory || []
     if (cats.length) {
@@ -449,17 +455,17 @@ Page({
         if (!byCat[cat]) byCat[cat] = []
         byCat[cat].push(r)
       }
-      const lines = []
+      s += '\n\n这个月的记账明细：'
       for (const cat of Object.keys(byCat)) {
-        lines.push('【' + cat + '】')
+        // 每个分类独立成块：标题行 + 空行 + 列表（markdown 列表需前有空行才渲染）
+        s += '\n\n' + cat + '：'
         for (const r of byCat[cat]) {
           const d = r.createdAt ? new Date(r.createdAt) : null
           const dateStr = d ? (d.getMonth() + 1) + '月' + d.getDate() + '日' : ''
           const sign = r.type === 'income' ? '+' : '-'
-          lines.push('- ' + dateStr + ' ' + (r.note || cat) + ' ' + sign + fmt(r.amount))
+          s += '\n- ' + dateStr + ' ' + (r.note || cat) + ' ' + sign + fmt(r.amount)
         }
       }
-      s += '\n\n这个月的记账明细：\n' + lines.join('\n')
     }
     return s
   },
@@ -503,4 +509,121 @@ Page({
   onPullDownRefresh() {},
   onReachBottom() {},
   onShareAppMessage() {},
+
+  // 空函数：用于 catchtap 阻止事件冒泡（弹窗内容点击不关闭弹窗）
+  noop() {},
+
+  // —— 拍照记账：选图 → 上传 → 云函数 OCR → 确认弹窗 ——
+  async onPhotoAccount() {
+    const self = this
+    if (this.data.ocrLoading) return
+    wx.chooseMedia({
+      count: 1,
+      mediaType: ['image'],
+      sourceType: ['camera', 'album'],
+      // 原图（不压缩）：qwen3.5-flash 对压缩 JPEG 偶发解析超时，原图识别更稳
+      sizeType: ['original'],
+      success: async (res) => {
+        const tempFile = res.tempFiles && res.tempFiles[0]
+        if (!tempFile) return
+        self.setData({ ocrLoading: true, ocrError: '' })
+        try {
+          // 1. 压缩图片：限制最长边 1024px（qwen3.5-flash 对大图/长图解析慢、易超时）
+          let toUpload = tempFile.tempFilePath
+          try {
+            const compressed = await wx.compressImage({
+              src: tempFile.tempFilePath,
+              compressedHeight: 1024,
+              quality: 80,
+            })
+            if (compressed && compressed.tempFilePath) toUpload = compressed.tempFilePath
+          } catch (e) {
+            // 压缩失败也照传原图（不阻断流程）
+            console.warn('compressImage failed, use original', e)
+          }
+
+          // 2. 上传到云存储（显式 60s 超时）
+          const ext = (toUpload.split('.').pop() || 'png').split('?')[0]
+          const cloudPath = `ocr_tmp/${Date.now()}_${Math.floor(Math.random() * 1e6)}.${ext}`
+          const up = await wx.cloud.uploadFile({ cloudPath, filePath: toUpload, config: { timeout: 60000 } })
+          if (!up || !up.fileID) throw new Error('上传失败')
+
+          // 2. 调云函数 OCR（云函数内用 cloud.ai() 调 qwen3.5-flash 多模态识别）
+          // 显式 60s 超时：wx.cloud.callFunction 默认 10s，OCR 冷启动+多模态经常 4-15s
+          const r = await new Promise((resolve, reject) => {
+            wx.cloud.callFunction({
+              name: 'miaojiRecord',
+              data: { action: 'ocr', payload: { imageUrl: up.fileID } },
+              config: { timeout: 60000 },
+            }).then((res) => resolve(res.result)).catch(reject)
+          })
+
+          if (!r || !r.success) {
+            const msg = (r && (r.message || r.code)) || '识别失败'
+            throw new Error(msg)
+          }
+
+          // 3. 展示确认弹窗（可改金额/类别）
+          self.setData({
+            showOcrModal: true,
+            ocrResult: {
+              amount: r.amount != null ? String(r.amount) : '',
+              merchant: r.merchant || '',
+              category: r.category || '其他',
+              date: r.date || '',
+            },
+          })
+        } catch (e) {
+          const msg = (e && e.message) || '拍照记账出错'
+          self.setData({ ocrError: msg })
+          // 识别失败时给更明确的提示：PNG 截图比相册 JPEG 识别更稳
+          const hint = /timeout|超时/.test(msg) ? '识别超时，建议用截图（PNG）重试' : msg
+          wx.showToast({ title: hint, icon: 'none', duration: 2500 })
+        } finally {
+          self.setData({ ocrLoading: false })
+        }
+      },
+      fail: (e) => {
+        // 用户取消选择，不提示
+        if (e && e.errMsg && e.errMsg.indexOf('cancel') >= 0) return
+        wx.showToast({ title: '选择图片失败', icon: 'none' })
+      },
+    })
+  },
+
+  // 确认弹窗里改金额/类别
+  onOcrAmountInput(e) {
+    this.setData({ 'ocrResult.amount': e.detail.value })
+  },
+  onOcrMerchantInput(e) {
+    this.setData({ 'ocrResult.merchant': e.detail.value })
+  },
+  onOcrCategoryChange(e) {
+    this.setData({ 'ocrResult.category': e.detail.value })
+  },
+
+  // 取消确认
+  onOcrCancel() {
+    this.setData({ showOcrModal: false, ocrResult: null, ocrError: '' })
+  },
+
+  // 确认记账
+  onOcrConfirm() {
+    const r = this.data.ocrResult
+    if (!r) return
+    const amount = parseFloat(r.amount)
+    if (isNaN(amount) || amount <= 0) {
+      wx.showToast({ title: '金额无效', icon: 'none' })
+      return
+    }
+    const note = r.merchant ? r.merchant : ''
+    this.setData({ showOcrModal: false })
+    const comp = this.selectComponent('#agentui')
+    if (comp && comp.appendAssistantMessage) {
+      comp.appendAssistantMessage('正在识别小票并记账…')
+    }
+    // 复用 doAdd（走 miaojiRecord add）
+    this.doAdd({ amount, category: r.category, note }, 'model')
+    this.setData({ ocrResult: null })
+  },
 });

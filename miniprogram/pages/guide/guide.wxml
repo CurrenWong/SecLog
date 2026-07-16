@@ -1,13 +1,12 @@
 <view class="guide-page">
   <view class="hero">
-    <view class="logo">秒记</view>
+    <view class="logo">秒记账</view>
     <view class="slogan">说话即记账 · AI 帮你管钱</view>
   </view>
 
   <view class="section-title">怎么用</view>
   <view class="guide-list">
     <view class="guide-card" wx:for="{{guides}}" wx:key="title">
-      <view class="guide-icon">{{item.icon}}</view>
       <view class="guide-body">
         <view class="guide-card-title">{{item.title}}</view>
         <view class="guide-card-desc">{{item.desc}}</view>

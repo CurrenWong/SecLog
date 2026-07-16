@@ -17,6 +17,72 @@ function ownerQuery() {
   return openid ? { openid } : null
 }
 
+// —— 拍照记账：调 CloudBase AI（服务端 SDK cloud.ai() 通道）做多模态小票识别 ——
+// 用 wx-server-sdk 的 cloud.ai()（自动内网鉴权，不需要硬编码 key）。
+// 注意：wx-server-sdk 需 >= 3.x 才有 cloud.ai() 通道（老版本 2.6.3 无此 API）。
+async function extractFromImage(imageUrl) {
+  const prompt = [
+    '你是一个小票识别助手。请仔细识别这张消费凭证（小票/发票/支付截图）。',
+    '提取以下字段并以 JSON 返回（不要任何额外解释、不要代码块包裹）：',
+    '1. amount: 总金额（数字，如 45.5）。若无法确认金额返回 null。',
+    '2. merchant: 商家/收款方名称（字符串）。无法识别返回 ""。',
+    '3. category: 消费类别，从以下枚举选一个：餐饮、交通、购物、居家、医疗、娱乐、教育、其他。',
+    '4. date: 消费日期（YYYY-MM-DD），无法识别返回 ""。',
+    '只输出一个 JSON 对象，例如：{"amount":45.5,"merchant":"全家便利店","category":"购物","date":"2026-07-15"}',
+  ].join('\n')
+
+  const ai = cloud.ai()
+  if (!ai) {
+    return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 wx-server-sdk 版本过低，无 cloud.ai() 通道' }
+  }
+  const model = ai.createModel('cloudbase')
+  const res = await model.generateText({
+    model: 'qwen3.5-flash',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: imageUrl } },
+        ],
+      },
+    ],
+    // 显式 HTTP 超时 90s（默认 15s 会被 SDK 内部 ClientRequest 截断；带图 AI 经常 5-20s）
+    timeout: 90000,
+  })
+
+  const content = res && (res.text || (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content))
+  if (!content) {
+    return { success: false, code: 'AI_EMPTY', message: '模型返回为空' }
+  }
+
+  // 容错解析：去掉 ```json ``` 包裹、提取第一个 {..} 块
+  let jsonStr = String(content).trim()
+  const fence = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) jsonStr = fence[1].trim()
+  const brace = jsonStr.match(/\{[\s\S]*\}/)
+  if (brace) jsonStr = brace[0]
+
+  let parsed
+  try {
+    parsed = JSON.parse(jsonStr)
+  } catch (e) {
+    return { success: false, code: 'AI_PARSE_ERROR', message: '模型返回无法解析为 JSON', raw: String(content).slice(0, 200) }
+  }
+
+  const amount = typeof parsed.amount === 'number' ? parsed.amount : null
+  const categoryEnum = ['餐饮', '交通', '购物', '居家', '医疗', '娱乐', '教育', '其他']
+  const category = categoryEnum.includes(parsed.category) ? parsed.category : '其他'
+
+  return {
+    success: true,
+    amount,
+    merchant: typeof parsed.merchant === 'string' ? parsed.merchant : '',
+    category,
+    date: typeof parsed.date === 'string' ? parsed.date : '',
+  }
+}
+
 exports.main = async (event, context) => {
   const { action, payload } = event
   const owner = ownerQuery()
@@ -42,11 +108,17 @@ exports.main = async (event, context) => {
         return { success: true, _id: res._id, record }
       }
 
-      // 查询最近 N 笔
+      // 查询最近 N 笔（支持 days 过滤最近 N 天）
       case 'list': {
-        const limit = Math.min(Number(payload && payload.limit) || 10, 50)
+        const limit = Math.min(Number(payload && payload.limit) || 10, 200)
+        const days = Number(payload && payload.days) || 0
         let query = db.collection(COLLECTION)
         if (owner) query = query.where(owner)
+        // days > 0：在 owner 过滤基础上追加 createdAt >= (now - days天)
+        if (days > 0) {
+          const since = new Date(Date.now() - days * 24 * 3600 * 1000)
+          query = query.where({ createdAt: _.gte(since) })
+        }
         const res = await query
           .orderBy('createdAt', 'desc')
           .limit(limit)
@@ -202,6 +274,108 @@ exports.main = async (event, context) => {
           byCategory: categories,
           records,
         }
+      }
+
+      // 拍照记账：识别小票图片 → 返回结构化字段
+      // payload: { imageUrl: 临时图片 URL 或云存储 fileID }
+      case 'ocr': {
+        const { imageUrl } = payload || {}
+        if (!imageUrl) {
+          return { success: false, code: 'MISSING_IMAGE', message: '缺少 imageUrl' }
+        }
+        // fileID 需换临时访问 URL（云存储临时链接有效期短，云函数内同步用）
+        let realUrl = imageUrl
+        if (imageUrl.startsWith('cloud://') || imageUrl.startsWith('wxfile://')) {
+          try {
+            const tmp = await cloud.getTempFileURL({ fileList: [imageUrl] })
+            if (tmp.fileList && tmp.fileList[0] && tmp.fileList[0].tempFileURL) {
+              realUrl = tmp.fileList[0].tempFileURL
+            }
+          } catch (e) {
+            return { success: false, code: 'URL_RESOLVE_ERROR', message: e.message }
+          }
+        }
+        const result = await extractFromImage(realUrl)
+        if (!result.success) return result
+        return {
+          success: true,
+          amount: result.amount,
+          merchant: result.merchant,
+          category: result.category,
+          date: result.date,
+        }
+      }
+
+      // 登录：返回 openid / unionid，并 upsert 用户档案（首次记录注册时间）
+      // 头像昵称由前端选择后通过 updateProfile 写入，这里只管身份。
+      case 'login': {
+        const ctx = cloud.getWXContext()
+        const openid = ctx.OPENID
+        const unionid = ctx.UNIONID || null
+        if (!openid) {
+          return { success: false, code: 'NO_OPENID', message: '非微信上下文无法登录' }
+        }
+        const users = db.collection('users')
+        const exist = await users.where({ openid }).get()
+        if (exist.data && exist.data.length) {
+          // 已注册：若 unionid 之前为空且本次有，补存
+          const u = exist.data[0]
+          if (!u.unionid && unionid) {
+            await users.doc(u._id).update({ data: { unionid } })
+          }
+          return {
+            success: true,
+            openid,
+            unionid: u.unionid || unionid,
+            registeredAt: u.registeredAt,
+            avatarUrl: u.avatarUrl || '',
+            nickName: u.nickName || '',
+            isNew: false,
+          }
+        }
+        // 首次注册
+        const reg = {
+          openid,
+          unionid,
+          avatarUrl: '',
+          nickName: '',
+          registeredAt: db.serverDate(),
+        }
+        await users.add({ data: reg })
+        return {
+          success: true,
+          openid,
+          unionid,
+          registeredAt: reg.registeredAt,
+          avatarUrl: '',
+          nickName: '',
+          isNew: true,
+        }
+      }
+
+      // 更新用户资料（头像 / 昵称），由前端授权后调用
+      case 'updateProfile': {
+        const ctx = cloud.getWXContext()
+        const openid = ctx.OPENID
+        if (!openid) {
+          return { success: false, code: 'NO_OPENID', message: '非微信上下文' }
+        }
+        const { avatarUrl, nickName } = payload || {}
+        const patch = {}
+        if (typeof avatarUrl === 'string') patch.avatarUrl = avatarUrl
+        if (typeof nickName === 'string') patch.nickName = nickName
+        console.log('[updateProfile] openid=', openid, 'patch=', JSON.stringify(patch))
+        if (!Object.keys(patch).length) {
+          return { success: false, code: 'NOTHING', message: '没有要更新的字段' }
+        }
+        const users = db.collection('users')
+        const exist = await users.where({ openid }).get()
+        if (exist.data && exist.data.length) {
+          await users.doc(exist.data[0]._id).update({ data: patch })
+        } else {
+          await users.add({ data: Object.assign({ openid, unionid: ctx.UNIONID || null }, patch) })
+        }
+        return { success: true, patch }
       }
 
       default:

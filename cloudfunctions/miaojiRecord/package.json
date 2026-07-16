@@ -4,6 +4,6 @@
   "description": "秒记记账云函数：记账数据的增/查/删/汇总",
   "main": "index.js",
   "dependencies": {
-    "wx-server-sdk": "~2.6.3"
+    "wx-server-sdk": "latest"
   }
 }

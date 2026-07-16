@@ -1,0 +1,9 @@
+{
+  "name": "visionProbe",
+  "version": "1.0.0",
+  "description": "临时验证 qwen3.5-flash 多模态能力",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "latest"
+  }
+}

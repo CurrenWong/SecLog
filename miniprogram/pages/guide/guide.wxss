@@ -41,12 +41,6 @@
   box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.05);
 }
 
-.guide-icon {
-  font-size: 48rpx;
-  margin-right: 24rpx;
-  line-height: 1.4;
-}
-
 .guide-body {
   flex: 1;
 }
