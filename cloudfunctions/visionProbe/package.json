@@ -1,9 +1,9 @@
 {
   "name": "visionProbe",
   "version": "1.0.0",
-  "description": "临时验证 qwen3.5-flash 多模态能力",
+  "description": "临时验证 hunyuan 多模态能力（@cloudbase/node-sdk app.ai()）",
   "main": "index.js",
   "dependencies": {
-    "@cloudbase/node-sdk": "latest"
+    "@cloudbase/node-sdk": ">=3.16.0"
   }
 }

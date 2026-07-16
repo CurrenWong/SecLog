@@ -1,8 +1,9 @@
 {
   "name": "ocrProbe",
   "version": "1.0.0",
+  "description": "临时验证 hunyuan 多模态 OCR 能力（@cloudbase/node-sdk app.ai()）",
   "main": "index.js",
   "dependencies": {
-    "wx-server-sdk": "latest"
+    "@cloudbase/node-sdk": ">=3.16.0"
   }
 }
