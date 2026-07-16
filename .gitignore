@@ -49,3 +49,11 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+  
+# ===== 大二进制占位（测试头像，不入库）=====  
+avatars/*.png  
+gen_small_receipt.py  
+ci-tools/j.txt  
+ci-tools/jest_out.txt  
+ci-tools/jest_full.txt  
+ci-tools/preview_out.txt  
