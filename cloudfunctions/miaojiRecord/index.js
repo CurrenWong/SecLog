@@ -1,10 +1,15 @@
 // 秒记 miaojiRecord 云函数
-// 负责记账数据的增 / 查 / 删 / 汇总
+// 负责记账数据的增 / 查 / 删 / 汇总 / ocr / 登录
 const cloud = require('wx-server-sdk')
+const tcb = require('@cloudbase/node-sdk')
 
 cloud.init({
   env: 'seclog-d1g8no5pc45e643aa',
 })
+
+// 服务端 AI 走 @cloudbase/node-sdk（wx-server-sdk 无 cloud.ai()）
+// 文档：@cloudbase/node-sdk >= 3.16.0 才有 app.ai() 多模态通道
+const tcbApp = tcb.init({ env: 'seclog-d1g8no5pc45e643aa' })
 
 const db = cloud.database()
 const _ = db.command
@@ -17,9 +22,9 @@ function ownerQuery() {
   return openid ? { openid } : null
 }
 
-// —— 拍照记账：调 CloudBase AI（服务端 SDK cloud.ai() 通道）做多模态小票识别 ——
-// 用 wx-server-sdk 的 cloud.ai()（自动内网鉴权，不需要硬编码 key）。
-// 注意：wx-server-sdk 需 >= 3.x 才有 cloud.ai() 通道（老版本 2.6.3 无此 API）。
+// —— 拍照记账：调 CloudBase AI（@cloudbase/node-sdk app.ai() 通道）做多模态小票识别 ——
+// 用 @cloudbase/node-sdk 的 app.ai()（自动内网鉴权，不需要硬编码 key）。
+// 注意：wx-server-sdk 无 cloud.ai()；AI 能力只在 @cloudbase/node-sdk >= 3.16.0 提供。
 async function extractFromImage(imageUrl) {
   const prompt = [
     '你是一个小票识别助手。请仔细识别这张消费凭证（小票/发票/支付截图）。',
@@ -31,13 +36,13 @@ async function extractFromImage(imageUrl) {
     '只输出一个 JSON 对象，例如：{"amount":45.5,"merchant":"全家便利店","category":"购物","date":"2026-07-15"}',
   ].join('\n')
 
-  const ai = cloud.ai()
+  const ai = tcbApp.ai()
   if (!ai) {
-    return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 wx-server-sdk 版本过低，无 cloud.ai() 通道' }
+    return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 @cloudbase/node-sdk 未初始化 AI 通道' }
   }
-  const model = ai.createModel('cloudbase')
+  const model = ai.createModel('hunyuan-exp')
   const res = await model.generateText({
-    model: 'qwen3.5-flash',
+    model: 'hunyuan-2.0-instruct-20251111',
     messages: [
       {
         role: 'user',
@@ -47,8 +52,6 @@ async function extractFromImage(imageUrl) {
         ],
       },
     ],
-    // 显式 HTTP 超时 90s（默认 15s 会被 SDK 内部 ClientRequest 截断；带图 AI 经常 5-20s）
-    timeout: 90000,
   })
 
   const content = res && (res.text || (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content))

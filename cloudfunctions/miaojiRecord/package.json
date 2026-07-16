@@ -1,9 +1,11 @@
 {
   "name": "miaojiRecord",
   "version": "1.0.0",
-  "description": "秒记记账云函数：记账数据的增/查/删/汇总",
+  "description": "秒记记账云函数：记账数据的增/查/删/汇总/ocr/登录",
   "main": "index.js",
   "dependencies": {
-    "wx-server-sdk": "latest"
+    "wx-server-sdk": "4.0.2",
+    "@cloudbase/node-sdk": ">=3.16.0",
+    "ws": "^8.18.0"
   }
 }
