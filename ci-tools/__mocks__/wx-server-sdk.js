@@ -11,12 +11,27 @@ function matchWhere(row, cond) {
   return Object.keys(cond).every((k) => {
     const v = cond[k]
     if (v && typeof v === 'object') {
-      if (v.$gte !== undefined) return row[k] >= v.$gte
-      if (v.$lt !== undefined) return row[k] < v.$lt
-      if (v.$eq !== undefined) return row[k] === v.$eq
+      // 同一字段上的所有 $ 前缀条件（含 $gte/$lt/$gt/$lte/$eq + $and/$or 嵌套）都参与 AND 检查
+      // 把 v 自己作为子条件（携带顶层 $gte/$lt 等），再把 $and/$or 里的子条件也并入
+      const subs = [v]
+      if (v.$and) subs.push(...v.$and)
+      if (v.$or) {
+        // OR 语义复杂：subs 整体要求"任一为真"
+        return subs.some((s) => checkRange(row[k], s))
+      }
+      return subs.every((s) => checkRange(row[k], s))
     }
     return row[k] === v
   })
+}
+
+function checkRange(actual, sub) {
+  if (sub.$gte !== undefined && !(actual >= sub.$gte)) return false
+  if (sub.$lt !== undefined && !(actual < sub.$lt)) return false
+  if (sub.$gt !== undefined && !(actual > sub.$gt)) return false
+  if (sub.$lte !== undefined && !(actual <= sub.$lte)) return false
+  if (sub.$eq !== undefined && actual !== sub.$eq) return false
+  return true
 }
 
 function makeQuery() {
@@ -61,12 +76,29 @@ function makeQuery() {
   return q
 }
 
+// 真实 CloudBase command 对象：_.gte(v) / _.lt(v) 返回命令对象，支持链式 .and(other) / .or(other) / .lt(v) ...
+// 命令对象被 .where(cond) 接收时，cond[k] 是命令对象（普通对象含 $gte/$lt 字段）
+// 实现策略：命令对象就是个普通对象（无 Proxy，避免 babel/jest 转译影响 Object.keys），
+// 链式方法 .and() / .lt() 等都返回新的命令对象。
+function makeCommand(state) {
+  const cmd = {
+    ...state,
+    toQuery() { const out = {}; for (const k of Object.keys(this)) { if (k.startsWith('$') && k !== '$and' && k !== '$or') out[k] = this[k] }; if (this.$and) out.$and = this.$and; if (this.$or) out.$or = this.$or; return out },
+    and(...more) { return makeCommand({ ...this, $and: [...(this.$and || []), ...more.map((c) => (c && c.toQuery) ? c.toQuery() : c)] }) },
+    or(...more) { return makeCommand({ ...this, $or: [...(this.$or || []), ...more.map((c) => (c && c.toQuery) ? c.toQuery() : c)] }) },
+  }
+  // 给每个比较方法动态绑定
+  for (const op of ['lt', 'gt', 'lte', 'gte', 'eq', 'neq']) {
+    cmd[op] = (v) => makeCommand({ ...cmd, ['$' + op]: v })
+  }
+  return cmd
+}
+
 const db = {
   collection() {
     return {
       async add({ data }) {
         const _id = 'id_' + Math.random().toString(36).slice(2, 9)
-        // data 里已有 createdAt（来自云函数 db.serverDate()），不覆盖
         store.push(Object.assign({ _id }, data))
         return { _id }
       },
@@ -78,10 +110,16 @@ const db = {
       update({ data }) { return makeQuery().update({ data }) },
     }
   },
-  // 模拟云函数 db.serverDate()：返回递增时间戳（seq 在模块级），
-  // 既保证 summary 的 createdAt >= startOfDay 比较成立，又保证 list 倒序稳定
+  // 模拟云函数 db.serverDate()：返回递增时间戳
   serverDate() { return new Date(Date.now() + seq++) },
-  command: { gte: (v) => ({ $gte: v }), lt: (v) => ({ $lt: v }), eq: (v) => ({ $eq: v }) },
+  command: {
+    gte: (v) => makeCommand({ $gte: v }),
+    lt: (v) => makeCommand({ $lt: v }),
+    gt: (v) => makeCommand({ $gt: v }),
+    lte: (v) => makeCommand({ $lte: v }),
+    eq: (v) => makeCommand({ $eq: v }),
+    neq: (v) => makeCommand({ $neq: v }),
+  },
 }
 
 const cloud = {

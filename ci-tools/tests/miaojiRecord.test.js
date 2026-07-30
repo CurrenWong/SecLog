@@ -4,6 +4,7 @@ const { parseExpense } = require('../../miniprogram/utils/parseExpense')
 
 // 云函数源码直接 require（它内部 require('wx-server-sdk') 已被 moduleNameMapper 重定向到 mock）
 const FUNC = require('../../cloudfunctions/miaojiRecord/index.js')
+const { parseQuery } = require('../../miniprogram/utils/parseExpense')
 
 // 每个用例前清空内存数据库
 beforeEach(() => {
@@ -134,6 +135,55 @@ describe('parseExpense 文本解析（T2）', () => {
   })
   test('纯数字无消费意图 → null（避免误记）', () => {
     expect(parseExpense('我的幸运数字是7')).toBeNull()
+  })
+})
+
+// PQ: parseQuery 查询意图识别（含 range 任意时间段预判）
+describe('parseQuery 查询意图（PQ）', () => {
+  test('本月汇总 → month', () => {
+    expect(parseQuery('这个月花了多少')).toEqual({ type: 'month', month: 'this' })
+  })
+  test('今年 → range/year', () => {
+    const r = parseQuery('今年花了多少')
+    expect(r.type).toBe('range')
+    expect(r.range.mode).toBe('year')
+    expect(r.range.year).toBe(new Date().getFullYear())
+  })
+  test('去年 → range/year-1', () => {
+    const r = parseQuery('去年开销多少')
+    expect(r.type).toBe('range')
+    expect(r.range.year).toBe(new Date().getFullYear() - 1)
+  })
+  test('指定年份 → range/year', () => {
+    const r = parseQuery('2025年花了多少')
+    expect(r.range).toEqual({ mode: 'year', year: 2025 })
+  })
+  test('最近30天 → range/lastN', () => {
+    const r = parseQuery('最近30天花了多少')
+    expect(r.type).toBe('range')
+    expect(r.range).toEqual({ mode: 'lastN', days: 30 })
+  })
+  test('近一周 → range/lastN(7)', () => {
+    const r = parseQuery('近一周消费多少')
+    expect(r.range).toEqual({ mode: 'lastN', days: 7 })
+  })
+  test('上半年 → range/between(01-01~06-30)', () => {
+    const y = new Date().getFullYear()
+    const r = parseQuery('上半年花了多少')
+    expect(r.range).toEqual({ mode: 'between', from: `${y}-01-01`, to: `${y}-06-30` })
+  })
+  test('某月区间 "1月到6月" → range/between', () => {
+    const y = new Date().getFullYear()
+    const r = parseQuery('1月到6月花了多少')
+    expect(r.range.mode).toBe('between')
+    expect(r.range.from).toBe(`${y}-01-01`)
+    expect(r.range.to).toBe(`${y}-06-30`)
+  })
+  test('含具体金额（"午饭花了38块"）→ null（是记账不是查询）', () => {
+    expect(parseQuery('午饭花了38块')).toBeNull()
+  })
+  test('闲聊（无查询词）→ null', () => {
+    expect(parseQuery('今天天气不错')).toBeNull()
   })
 })
 
@@ -281,5 +331,60 @@ describe('统计汇总（stats）', () => {
     expect(r.success).toBe(true)
     expect(r.count).toBe(0)
     expect(r.expenseTotal).toBe(0)
+  })
+})
+
+// RANGE: 任意时间段统计（startDate/endDate 区间过滤）
+describe('统计汇总（range 任意时间段）', () => {
+  const OWNER = 'rangeUser'
+
+  // 直接注入带历史 createdAt 的记录（add 只能写"现在"，区间测试需历史日期）
+  function seedHistory() {
+    const mk = (amount, type, category, note, dateStr) => ({
+      _id: 'h_' + Math.random().toString(36).slice(2, 8),
+      openid: OWNER,
+      amount, type, category, note,
+      createdAt: new Date(dateStr + 'T12:00:00.000Z'),
+    })
+    cloud.__reset([
+      mk(-100, 'expense', '餐饮', '2025火锅', '2025-06-15'),
+      mk(-200, 'expense', '购物', '2025衣服', '2025-12-20'),
+      mk(5000, 'income', '工资', '2025工资', '2025-03-10'),
+      mk(-50, 'expense', '餐饮', '2026年初饭', '2026-01-05'),
+      mk(-80, 'expense', '交通', '2026打车', '2026-07-01'),
+    ], { OPENID: OWNER })
+  }
+
+  test('year 模式：只统计该年（含收入/支出）', async () => {
+    seedHistory()
+    const r = await call('stats', { startDate: '2025-01-01', endDate: '2025-12-31' }, { OPENID: OWNER })
+    expect(r.success).toBe(true)
+    expect(r.rangeLabel).toBe('2025-01-01 ~ 2025-12-31')
+    expect(r.count).toBe(3)              // 2025 年的 3 笔
+    expect(r.expenseTotal).toBe(-300)    // -100 -200
+    expect(r.incomeTotal).toBe(5000)
+    expect(r.net).toBe(4700)
+  })
+
+  test('between 模式：起止日期精确过滤（含两端当天）', async () => {
+    seedHistory()
+    // 2026-01-01 ~ 2026-01-31：只命中 2026-01-05 那笔
+    const r = await call('stats', { startDate: '2026-01-01', endDate: '2026-01-31' }, { OPENID: OWNER })
+    expect(r.count).toBe(1)
+    expect(r.expenseTotal).toBe(-50)
+  })
+
+  test('lastN 模式由前端算 startDate/endDate，云函数侧只认区间（边界含 endDate 当天 23:59:59）', async () => {
+    seedHistory()
+    // 模拟前端算出的"最近 N 天"区间：覆盖到 2026-07-01 当天
+    const r = await call('stats', { startDate: '2026-07-01', endDate: '2026-07-01' }, { OPENID: OWNER })
+    expect(r.count).toBe(1)
+    expect(r.expenseTotal).toBe(-80)
+  })
+
+  test('owner 隔离：range 模式下别的用户看到 0 笔', async () => {
+    seedHistory()
+    const r = await call('stats', { startDate: '2025-01-01', endDate: '2026-12-31' }, { OPENID: 'stranger' })
+    expect(r.count).toBe(0)
   })
 })

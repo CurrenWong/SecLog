@@ -187,13 +187,9 @@
                 <view style="display: flex; gap: 10px;justify-content: flex;" wx:if="{{!item.hiddenBtnGround}}">
                   <image wx:if="{{item.error}}" mode="widthFix" bind:tap="showErrorMsg" src='./imgs/error-circle.svg'
                     class="tool_btn" data-content="{{item.error}}" data-reqid="{{item.reqId}}" />
-                  <image mode="widthFix" bind:tap="copyChatRecord" src='./imgs/copy.svg' class="tool_btn"
-                    data-content="{{item.content}}" />
+                  <view class="tool_text" bind:tap="copyChatRecord" data-content="{{item.content}}">复制</view>
                   <block wx:if="{{!item.error}}">
-                    <button class="share_btn" open-type="share">
-                      <image mode="widthFix" src='./imgs/share.svg' class="tool_btn" style="vertical-align: top;"
-                        bind:tap="share" />
-                    </button>
+                    <button class="share_btn_text" open-type="share" bind:tap="share">分享</button>
                     <block wx:if="{{chatMode=== 'bot'}}">
                       <image mode="widthFix" bind:tap="openFeedback" data-feedbackType="upvote"
                         data-feedbackRecordId="{{item.record_id}}" src='./imgs/thumb-up.svg' class="tool_btn" />
@@ -317,10 +313,9 @@
     </view>
     <view class="foot_function">
       <view class="input_box">
-        <view class="left_btns" wx:if="{{showVoice&&!isAgent}}">
-          <image wx:if="{{!useVoice}}" src="./imgs/voice.svg" class="set" mode="widthFix"
-            bind:tap="handleChangeInputType" />
-          <image wx:else src="./imgs/keyboard.svg" class="set" mode="widthFix" bind:tap="handleChangeInputType" />
+        <view class="left_btns" wx:if="{{true}}">
+          <image src="./imgs/voice.svg" class="set {{voiceActive ? 'voice-active' : ''}}" mode="widthFix"
+            bindtouchstart="onVoiceIconStart" bindtouchend="onVoiceIconEnd" bindtouchcancel="onVoiceIconCancel" />
         </view>
         <view hidden="{{useVoice}}" class="input_inner_box">
           <textarea class="input" value="{{inputValue}}" maxlength="1024" bindfocus="bindInputFocus"
@@ -345,7 +340,7 @@
           <!-- 加号 -->
           <image src="./imgs/set.svg" class="set" mode="widthFix" bind:tap="handleClickTools" />
           <!-- 发送按钮 -->
-          <view wx:if="{{!!inputValue&&chatStatus===0}}" class="set"
+          <view wx:if="{{!!inputValue&&chatStatus===0}}" class="set send-btn"
             style="display: flex;justify-content: center;align-items: center;background-color: #436af4;border-radius: 50px;">
             <image src="./imgs/send.svg" class="send-set" mode="widthFix" bind:tap="handleSendMessage"
               style="transform-origin: 8px 8px;" />

@@ -46,7 +46,7 @@
 
     <view wx:elif="{{recent.length === 0}}" class="empty">还没有记录，点上方「开始记账」试试吧</view>
 
-    <view wx:else>
+    <view wx:else class="recent-list">
       <view class="record" wx:for="{{recent}}" wx:key="_id">
         <view class="record-cat">{{item.category}}</view>
         <view class="record-note">{{item.note || '无备注'}}</view>

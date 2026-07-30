@@ -20,6 +20,12 @@
     "backgroundTextStyle": "light",
     "enablePullDownRefresh": true
   },
+  "plugins": {
+    "WechatSI": {
+      "version": "0.3.9",
+      "provider": "WX_PROVIDER_APPID_PLACEHOLDER"
+    }
+  },
   "sitemapLocation": "sitemap.json",
   "style": "v2",
   "lazyCodeLoading": "requiredComponents",

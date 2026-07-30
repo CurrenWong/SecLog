@@ -26,7 +26,7 @@ const VALID_CATEGORIES = new Set([
 const MAX_ABS_AMOUNT = 1e7
 
 // 查询类型白名单
-const VALID_QUERY_TYPES = new Set(['month', 'day', 'category', 'recent', 'breakdown', 'income'])
+const VALID_QUERY_TYPES = new Set(['month', 'day', 'category', 'recent', 'breakdown', 'income', 'range'])
 
 // 从模型文本中抠出第一个 JSON 对象（兼容 ```json 代码块 或裸 JSON）
 function extractJson(text) {
@@ -78,20 +78,23 @@ function validateRecord(parsed) {
 // 正则线索（parseExpense / parseQuery / parseUndo 的结果）作为上下文喂给模型，
 // 帮助它判断意图，但最终 decision 权在模型（正则可能漏抽或误抽）。
 function buildPrompt(text, hints = {}) {
-  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, context = null, history = null, distantSummary = null } = hints
+  const { regexExpense = null, regexExpenses = null, queryHint = null, undoHint = false, recentRecord = null, context = null, history = null, distantSummary = null } = hints
   const lines = [
     '你是秒记记账助手的意图理解器。分析用户这句话的意图，输出一个 JSON 对象，不要任何解释、不要 markdown 代码块标记、不要多余文字。',
     '',
     '字段说明：',
     '- action: 必填，四选一：',
     '    "record" = 用户说出/暗示一笔消费或收入（要记账）',
+    '    "multi_record" = 用户一句话里说了【两笔或更多】独立的消费或收入（如"午饭38打车25买菜60""早饭12，午饭38，晚饭45"），要一次性记多笔',
     '    "query"  = 用户想看汇总/分类/明细/某天花了多少（统计查询，不要当记账）',
     '    "undo"   = 用户要撤回/删除刚才记的那笔（"记错了/撤回/删掉/取消记录"）',
     '    "chat"   = 闲聊、普通提问、与记账和查询都无关',
     '- 当 action="record" 时附带：',
     '    amount(数字，支出负数/收入正数), category(餐饮/交通/购物/居家/娱乐/医疗/教育/收入/其他), note(≤20字备注)',
+    '- 当 action="multi_record" 时附带：',
+    '    records: [ { amount, category, note }, ... ]  （每笔格式同 record，逐条独立；注意每笔的支出/收入符号要正确）',
     '- 当 action="query" 时附带：',
-    '    query: { type: "month"|"day"|"category"|"recent"|"breakdown", category?: "餐饮"等（仅 type=category 时需要） }',
+    '    query: { type: "month"|"day"|"category"|"recent"|"breakdown"|"range", category?: "餐饮"等（仅 type=category 时需要）, range?: {...}（仅 type=range 时需要） }',
     '    type 说明：',
     '      "month"  = 这个月总共花了多少（总览）',
     '      "day"    = 今天花了多少',
@@ -99,10 +102,16 @@ function buildPrompt(text, hints = {}) {
     '      "breakdown" = 按分类统计支出（列出所有分类各自花了多少，如"按分类统计/各类花了多少/分类汇总"，不带具体分类名）',
     '      "income" = 问收入汇总（如"收入有多少""赚了多少""这个月入账多少"）→ 注意：不要判成 category:"收入"，收入是汇总维度不是消费分类',
     '      "recent" = 最近记了几笔（明细），可附 only:"income" 只看收入 / only:"expense" 只看支出（如"收入明细"→recent+only:"income"）',
+    '      "range"  = 任意时间段查询（非本月/今日/指定单月），需带 range 对象，三选一：',
+    '          range: { mode: "year", year: 2026 }            → 某一年（"今年""去年""2025年"）',
+    '          range: { mode: "lastN", days: 30 }             → 最近 N 天（"最近30天""近一周"→days:7）',
+    '          range: { mode: "between", from: "2026-01-01", to: "2026-06-30" }  → 起止日期区间（"1月到6月""从元旦到国庆"）',
+    '        range 模式默认看支出+收入总览（同 month 模板），不指定分类。',
     '- 当 action="undo" 或 "chat" 时，不带其他字段。',
     '',
     '判断规则：',
     '1) 用户明确说出一笔消费或收入，或暗示（如"中午火锅大概五十"）→ action:"record"。',
+    '1.5) 用户一句话里含【两笔或更多】独立消费/收入（用顿号/逗号/空格分隔，或连写无分隔如"午饭38打车25"），即便金额都在一句里 → action:"multi_record"，records 为每笔独立对象（不要合并成一笔，也不要只抽第一笔）。',
     '2) 用户问花了多少/这个月开销/某分类花了多少/最近记了啥 → action:"query"。',
     '3) 用户要撤回/删除刚才的记录 → action:"undo"。',
     '4) 闲聊、普通提问、或完全无关 → action:"chat"。',
@@ -112,6 +121,8 @@ function buildPrompt(text, hints = {}) {
     '区分"income"与"category:收入"：用户问收入汇总（"收入有多少""赚了多少""进账多少"）→ type:"income"（不带 category）；',
     '绝不要把"收入"当成消费分类去查 category:"收入"（收入记录 type=income，不在消费分类统计里）。"支出有多少"仍用 type:"month"（总览含支出）。',
     '"收入明细/支出明细" → type:"recent" 且 only:"income"/"expense"（只看某一类明细，不要混全量）。',
+    '区分"range"与"month"：用户问的是跨月/跨年/非当前月的区间（"今年花了多少""去年开销""最近30天""上半年""1月到6月"）→ type:"range" 带对应 range 对象；',
+    '用户问的就是当前这个自然月（"这个月/本月"）→ 仍用 type:"month"。"上半年"="1月到6月"→range{between,from:今年-01-01,to:今年-06-30}；"今年"→range{year:今年}；"去年"→range{year:去年}。',
     '',
     '被动填槽（多轮记账）：若用户说"记一笔/记一下/记个账"等记账意图但【没有金额】，',
     '返回 action:"record" 且 amount:null（不要当成 chat，也不要瞎猜金额）。下一轮用户补"38 餐饮"时，',
@@ -121,6 +132,9 @@ function buildPrompt(text, hints = {}) {
 
   if (regexExpense) {
     lines.push(`正则消费抽取线索（仅供参考）：${JSON.stringify(regexExpense)}`)
+  }
+  if (regexExpenses && Array.isArray(regexExpenses) && regexExpenses.length >= 2) {
+    lines.push(`正则多笔抽取线索（仅供参考，最终是否多笔由你判断）：${JSON.stringify(regexExpenses)}`)
   }
   if (queryHint) {
     lines.push(`正则查询线索（仅供参考）：${JSON.stringify(queryHint)}`)
@@ -166,10 +180,15 @@ function buildPrompt(text, hints = {}) {
   lines.push('示例：')
   lines.push('输入"中午跟同事吃了顿火锅大概五十多" → {"action":"record","amount":-55,"category":"餐饮","note":"火锅"}')
   lines.push('输入"发工资了八百块" → {"action":"record","amount":800,"category":"收入","note":"工资"}')
+  lines.push('输入"早饭12，午饭38，晚饭45" → {"action":"multi_record","records":[{"amount":-12,"category":"餐饮","note":"早饭"},{"amount":-38,"category":"餐饮","note":"午饭"},{"amount":-45,"category":"餐饮","note":"晚饭"}]}')
+  lines.push('输入"午饭38打车25买菜60" → {"action":"multi_record","records":[{"amount":-38,"category":"餐饮","note":"午饭"},{"amount":-25,"category":"交通","note":"打车"},{"amount":-60,"category":"居家","note":"买菜"}]}')
   lines.push('输入"这个月花了多少钱" → {"action":"query","query":{"type":"month"}}')
   lines.push('输入"餐饮花了多少" → {"action":"query","query":{"type":"category","category":"餐饮"}}')
   lines.push('输入"记错了" → {"action":"undo"}')
   lines.push('输入"今天天气不错" → {"action":"chat"}')
+  lines.push('输入"今年花了多少" → {"action":"query","query":{"type":"range","range":{"mode":"year","year":2026}}}')
+  lines.push('输入"最近30天花了多少" → {"action":"query","query":{"type":"range","range":{"mode":"lastN","days":30}}}')
+  lines.push('输入"上半年花了多少" → {"action":"query","query":{"type":"range","range":{"mode":"between","from":"2026-01-01","to":"2026-06-30"}}}')
   lines.push('')
   lines.push(`用户输入：${text}`)
 
@@ -179,6 +198,7 @@ function buildPrompt(text, hints = {}) {
 // 主入口：调用模型做意图判断并校验，返回统一结构
 // 返回：
 //   { action: 'record', amount, category, note }
+//   { action: 'multi_record', records: [{ amount, category, note }, ...] }
 //   { action: 'correct', amount, category, note, target }
 //   { action: 'query',  query: { type, category?, month? } }
 //   { action: 'undo' }
@@ -189,10 +209,10 @@ function buildPrompt(text, hints = {}) {
 // distantSummary（可选）：超出窗口的远处摘要
 async function classifyIntent(text, callModel, opts = {}) {
   if (!text || typeof callModel !== 'function') return null
-  const { regexExpense = null, queryHint = null, undoHint = false, recentRecord = null, ctx = null, history = null, distantSummary = null } = opts
+  const { regexExpense = null, regexExpenses = null, queryHint = null, undoHint = false, recentRecord = null, ctx = null, history = null, distantSummary = null } = opts
   let raw
   try {
-    raw = await callModel(buildPrompt(text, { regexExpense, queryHint, undoHint, recentRecord, context: ctx, history, distantSummary }))
+    raw = await callModel(buildPrompt(text, { regexExpense, regexExpenses, queryHint, undoHint, recentRecord, context: ctx, history, distantSummary }))
   } catch (e) {
     return null // 模型调用失败 → 降级，交回上层
   }
@@ -216,6 +236,10 @@ async function classifyIntent(text, callModel, opts = {}) {
     if (type === 'month' && q.month) {
       query.month = q.month
     }
+    // range 类型：携带 range 对象（{mode, year?/days?/from?/to?}），供 tryQuery 转成 startDate/endDate
+    if (type === 'range' && q.range) {
+      query.range = q.range
+    }
     return { action: 'query', query }
   }
 
@@ -238,6 +262,21 @@ async function classifyIntent(text, callModel, opts = {}) {
     const rec = validateRecord(parsed)
     if (!rec) return { action: 'chat' } // 金额无效 → 退化闲聊
     return { action: 'record', ...rec }
+  }
+
+  // multi_record（一句话多笔记账）：records 为数组，逐条校验+归一
+  // 至少保留 1 条有效记录才视为合法多笔；全无效 → 退化 chat
+  if (action === 'multi_record') {
+    const rawList = Array.isArray(parsed.records) ? parsed.records : []
+    const records = []
+    for (const r of rawList) {
+      const rec = validateRecord(r)
+      if (rec) records.push(rec)
+    }
+    if (records.length >= 1) {
+      return { action: 'multi_record', records }
+    }
+    return { action: 'chat' } // 无有效记录 → 退化闲聊
   }
 
   // 兼容旧格式（无 action 但带 amount）→ 视为 record

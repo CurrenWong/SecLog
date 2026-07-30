@@ -379,14 +379,30 @@ describe('B2 失败路径（callFunction reject / 模型降级失败）', () => 
     const inst = makeInst()
     jest.spyOn(inst, 'callModelForExtract').mockRejectedValue(new Error('model net'))
 
-    await send(inst, '嗯那个啥') // 正则 null → 模型失败 → decision null
+    // 场景1：无 regex/query/undo hint → buildBlankFallbackHint（"换个说法试试"），不记账不调云函数
+    await send(inst, '嗯那个啥') // 正则 null，queryHint=null，undoHint=false
     await sleep()
 
     const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
     expect(actions).not.toContain('add') // 没尝试记账云函数
-    expect(appendMock).not.toHaveBeenCalled() // 没确认卡片
-    // 不应弹「记账出错」——模型降级应保守交给对话，而非报错刷屏
+    expect(actions).not.toContain('stats') // 没调查询云函数（无 queryHint）
+    // 展示万能提示（不是空白，也不是报错 toast）
+    expect(appendMock).toHaveBeenCalledWith(expect.stringContaining('换个说法试试'))
     expect(global.wx.showToast).not.toHaveBeenCalled()
+  })
+
+  test('模型降级失败 + 有 queryHint → 直接 tryQuery（不反问）', async () => {
+    const inst = makeInst()
+    jest.spyOn(inst, 'callModelForExtract').mockRejectedValue(new Error('model net'))
+
+    // "这个月花了多少"→ queryHint={type:'month'}，模型失败时直接查，不问"要查吗"
+    await send(inst, '这个月花了多少')
+    await sleep()
+
+    const actions = callFunctionMock.mock.calls.map((c) => c[0].data.action)
+    expect(actions).toContain('stats') // 直接走 stats 查询
+    expect(actions).not.toContain('add') // 没记成账
+    expect(appendMock).toHaveBeenCalled() // 查完展示结果
   })
 
   test('模型判 chat（非记账）→ 不记、不插卡片（交给对话）', async () => {

@@ -16,7 +16,7 @@
   </view>
 
   <view wx:if="{{loading}}" class="empty">加载中…</view>
-  <view wx:elif="{{records.length === 0}}" class="empty">最近一个月还没有记录</view>
+  <view wx:elif="{{records.length === 0}}" class="empty">本月还没有记录</view>
 
   <view wx:else class="table">
     <view class="tr th">

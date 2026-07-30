@@ -1,3 +1,6 @@
+const { computeCurrentMonthDays } = require('../../utils/dateRange')
+const { checkDeleteResult } = require('../../utils/deleteResult')
+
 Page({
   data: {
     records: [],
@@ -14,11 +17,25 @@ Page({
     this.loadRecords()
   },
 
+  onLoad(options) {
+    // 从查账面板跳来：定位某条记录并自动打开 改 / 删
+    // options.targetId 必填，options.mode: 'edit'(默认) | 'delete'
+    if (options && options.targetId) {
+      this._targetId = options.targetId
+      this._targetMode = options.mode === 'delete' ? 'delete' : 'edit'
+    }
+  },
+
   loadRecords() {
     this.setData({ loading: true })
+    // 定位模式（从查账面板跳来）：放大时间范围确保能找到目标记录
+    const isTarget = !!this._targetId
+    const payload = isTarget
+      ? { days: 3650, limit: 5000 }
+      : { days: computeCurrentMonthDays(), limit: 200 } // 月初到今天（含），与查账页面「本月」口径一致
     wx.cloud.callFunction({
       name: 'miaojiRecord',
-      data: { action: 'list', payload: { days: 30, limit: 200 } },
+      data: { action: 'list', payload },
     }).then((res) => {
       const result = res.result || {}
       if (result.success) {
@@ -49,6 +66,22 @@ Page({
           totalIncome,
           loading: false,
         })
+        // 定位模式：找到目标记录后自动打开 改 / 删
+        if (isTarget && this._targetId) {
+          const found = list.find((r) => r._id === this._targetId)
+          if (found) {
+            if (this._targetMode === 'delete') {
+              this.onDelete({ currentTarget: { dataset: { id: this._targetId } } })
+            } else {
+              this.onEdit({ currentTarget: { dataset: { id: this._targetId } } })
+            }
+          } else {
+            wx.showToast({ title: '未找到该记录', icon: 'none' })
+          }
+          // 只定位一次，避免 onShow 重复触发
+          this._targetId = null
+          this._targetMode = null
+        }
       } else {
         this.setData({ loading: false })
         wx.showToast({ title: '加载失败', icon: 'none' })
@@ -129,6 +162,7 @@ Page({
         wx.showToast({ title: '已保存', icon: 'success' })
         this.closeEdit()
         this.loadRecords()
+        this.backToQueryAndRefresh()
       } else {
         wx.showToast({ title: '保存失败', icon: 'none' })
       }
@@ -148,9 +182,19 @@ Page({
         wx.cloud.callFunction({
           name: 'miaojiRecord',
           data: { action: 'delete', payload: { _id: id } },
-        }).then(() => {
-          wx.showToast({ title: '已删除', icon: 'success' })
-          this.loadRecords()
+        }).then((del) => {
+          const result = checkDeleteResult(del)
+          if (result === 'ok') {
+            wx.showToast({ title: '已删除', icon: 'success' })
+            this.loadRecords()
+            this.backToQueryAndRefresh()
+          } else if (result === 'not-found') {
+            wx.showToast({ title: '记录已不在（可能归属变更）', icon: 'none' })
+            // 仍刷新一次，把「不在」的幽灵记录清掉
+            this.loadRecords()
+          } else {
+            wx.showToast({ title: '删除失败', icon: 'none' })
+          }
         }).catch(() => {
           wx.showToast({ title: '删除失败', icon: 'none' })
         })
@@ -160,5 +204,17 @@ Page({
 
   goBack() {
     wx.navigateBack({ delta: 1 })
+  },
+
+  // 从查账面板跳来改/删后：刷新上一页（chatBot）的查账结果并返回
+  backToQueryAndRefresh() {
+    const pages = getCurrentPages()
+    if (pages.length >= 2) {
+      const prev = pages[pages.length - 2]
+      if (prev && prev.route && prev.route.indexOf('chatBot') >= 0 && prev.refreshCurrentQuery) {
+        prev.refreshCurrentQuery()
+      }
+    }
+    setTimeout(() => wx.navigateBack({ delta: 1 }), 600)
   },
 })

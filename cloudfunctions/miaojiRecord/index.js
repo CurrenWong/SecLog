@@ -115,14 +115,20 @@ exports.main = async (event, context) => {
       case 'list': {
         const limit = Math.min(Number(payload && payload.limit) || 10, 200)
         const days = Number(payload && payload.days) || 0
-        let query = db.collection(COLLECTION)
-        if (owner) query = query.where(owner)
-        // days > 0：在 owner 过滤基础上追加 createdAt >= (now - days天)
+        // ⚠️ CloudBase 文档库多个 .where() 链式调用是【覆盖】关系，必须把多个字段合并到单个对象里
+        // 之前 `query.where(owner)` 然后 `query.where({ createdAt: ... })` 会让 owner 被 createdAt 覆盖
+        // 后果：days > 0 时 owner 过滤丢失，返回了【所有用户】的记录，导致前端看到「别人」的数据，且
+        // 用户按 _id 删自己的记录时，那些「别人的」记录无法被命中删除（owner 不匹配），
+        // 但前端 toast 显示「已删除」造成误导。
+        // 修复：把所有筛选条件塞进单个 where({...})，多字段间由 SDK 自动 AND。
+        const cond = {}
+        if (owner) cond.openid = owner.openid
         if (days > 0) {
           const since = new Date(Date.now() - days * 24 * 3600 * 1000)
-          query = query.where({ createdAt: _.gte(since) })
+          cond.createdAt = _.gte(since)
         }
-        const res = await query
+        const res = await db.collection(COLLECTION)
+          .where(cond)
           .orderBy('createdAt', 'desc')
           .limit(limit)
           .get()
@@ -164,6 +170,24 @@ exports.main = async (event, context) => {
         return { success: true, updated: res.stats.updated, _id }
       }
 
+      // 一次性数据迁移：把 owner = 'anonymous' 的字面值记录改成调用方 openid
+      // 安全约束：只迁字面字符串 'anonymous'，缺 openid 字段或其他 openid 一概不动
+      case 'migrateAnonymous': {
+        const openid = cloud.getWXContext().OPENID
+        if (!openid) {
+          return { success: false, code: 'NO_OPENID', message: '非微信上下文无法迁移' }
+        }
+        const res = await db.collection(COLLECTION)
+          .where({ openid: 'anonymous' })
+          .update({ data: { openid } })
+        return {
+          success: true,
+          migrated: res.stats.updated,
+          toOpenid: openid,
+          note: '字面值 anonymous 才迁；缺字段或其他 openid 不动',
+        }
+      }
+
       // 汇总（今日 / 本月）
       case 'summary': {
         const now = new Date()
@@ -197,30 +221,46 @@ exports.main = async (event, context) => {
         }
       }
 
-      // 统计：按分类汇总（支持指定月份，默认本月）
-      // payload: { month?: '2026-07' | 'this' | 不传(本月), category?: 指定分类 }
+      // 统计：按分类汇总（支持指定月份 / 任意时间段，默认本月）
+      // payload:
+      //   month?: '2026-07' | 'this' | 不传(本月)
+      //   startDate?, endDate?: 'YYYY-MM-DD' 任意区间（优先于 month；endDate 含当天 23:59:59）
+      //   category?: 指定分类
       case 'stats': {
-        const { month, category } = payload || {}
-        // 确定统计起止时间
+        const { month, category, startDate, endDate } = payload || {}
+        // 确定统计起止时间（统一用 UTC 边界，与数据库 createdAt 的 UTC 存储一致，避免时区错位漏数据）
         let start, end
-        let useLt = false // 是否加 _.lt(end) 上限（仅指定历史月份时需要）
-        if (month && month !== 'this') {
+        let useLt = false // 是否加 _.lt(end) 上限
+        const toUtcMidnight = (y, m, d, endOfDay) => {
+          // endOfDay=true → 当天 23:59:59.999 UTC；false → 当天 00:00:00.000 UTC
+          return new Date(Date.UTC(y, m - 1, d, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0))
+        }
+        if (startDate && endDate) {
+          // 任意时间段：startDate 当天 0 点 UTC 起，endDate 含当天 23:59:59.999 UTC
+          const [sy, sm, sd] = startDate.split('-').map(Number)
+          const [ey, em, ed] = endDate.split('-').map(Number)
+          start = toUtcMidnight(sy, sm, sd, false)
+          end = toUtcMidnight(ey, em, ed, true)
+          useLt = true
+        } else if (month && month !== 'this') {
           // month 格式 'YYYY-MM'
           const [y, m] = month.split('-').map(Number)
-          start = new Date(y, m - 1, 1)
-          end = new Date(y, m, 1) // 下月 1 号 0 点（不含）
+          start = toUtcMidnight(y, m, 1, false)
+          end = toUtcMidnight(y, m + 1, 1, false) // 下月 1 号 0 点 UTC（不含）
           useLt = true
         } else {
-          // 本月：与 summary 对齐，只用 _.gte(startOfMonth)，不加 _.lt
+          // 本月：与 summary 对齐，只用 _.gte(startOfMonth UTC)，不加 _.lt
           // （避免云端 serverDate 存 UTC、本地构造 end 时区错位导致整月数据被过滤）
           const now = new Date()
-          start = new Date(now.getFullYear(), now.getMonth(), 1)
+          start = toUtcMidnight(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, false)
         }
 
-        const cond = { createdAt: _.gte(start) }
+        // 注意：CloudBase 文档库多次 .where() 是覆盖关系，不能链式加 _.lt(end)。
+        // 必须在同一字段上用 command.and() 合并范围条件。
+        const createdAtCond = useLt ? _.gte(start).and(_.lt(end)) : _.gte(start)
+        const cond = { createdAt: createdAtCond }
         if (owner) cond.openid = owner.openid
-        let q = db.collection(COLLECTION).where(cond)
-        if (useLt) q = q.where({ createdAt: _.lt(end) })
+        const q = db.collection(COLLECTION).where(cond)
         const res = await q.get()
 
         const rows = res.data
@@ -244,6 +284,7 @@ exports.main = async (event, context) => {
           return {
             success: true,
             month: month && month !== 'this' ? month : 'this',
+            rangeLabel: (startDate && endDate) ? `${startDate} ~ ${endDate}` : '',
             category,
             amount: val,
             count: rows.filter((r) => (r.category || '其他') === category && r.type !== 'income').length,
@@ -270,6 +311,7 @@ exports.main = async (event, context) => {
         return {
           success: true,
           month: month && month !== 'this' ? month : 'this',
+          rangeLabel: (startDate && endDate) ? `${startDate} ~ ${endDate}` : '',
           expenseTotal,
           incomeTotal,
           net: incomeTotal + expenseTotal, // 支出为负，收入为正 → 净 = 收入 + 支出

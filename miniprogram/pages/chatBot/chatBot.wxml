@@ -1,10 +1,89 @@
 <!--pages/chatBot/chatBot.wxml-->
-<view>
-  <agent-ui id="agentui" agentConfig="{{agentConfig}}" showBotAvatar="{{showBotAvatar}}" chatMode="{{chatMode}}" modelConfig="{{modelConfig}}" systemPrompt="{{systemPrompt}}" envShareConfig="{{envShareConfig}}" bind:userSend="onUserSend" bind:messageDone="onMessageDone">
-  </agent-ui>
+<view class="page">
 
-  <!-- 拍照记账浮动按钮（纯 CSS 相机图标，不依赖系统 emoji 字体） -->
-  <view class="photo-fab" bindtap="onPhotoAccount">
+  <!-- 顶部双 Tab：记账 / 查账 -->
+  <view class="tab-bar">
+    <view class="tab-item {{activeTab==='record'?'tab-active':''}}" data-tab="record" bindtap="onSwitchTab">记账</view>
+    <view class="tab-item {{activeTab==='query'?'tab-active':''}}" data-tab="query" bindtap="onSwitchTab">查账</view>
+  </view>
+
+  <!-- 记账 Tab：自然语言 + 拍照（原 agent-ui 全交互保留） -->
+  <view wx:if="{{activeTab==='record'}}" class="tab-content">
+    <agent-ui id="agentui" agentConfig="{{agentConfig}}" showBotAvatar="{{showBotAvatar}}" chatMode="{{chatMode}}" modelConfig="{{modelConfig}}" systemPrompt="{{systemPrompt}}" envShareConfig="{{envShareConfig}}" bind:userSend="onUserSend" bind:messageDone="onMessageDone" bind:voiceStart="onVoiceStart" bind:voiceEnd="onVoiceEnd" bind:voiceCancel="onVoiceCancel" bind:toolsToggle="onToolsToggle">
+    </agent-ui>
+
+    <!-- 语音识别状态提示（输入框左侧图标触发，结果预览） -->
+    <view wx:if="{{voiceStatus===1 || voiceStatus===2}}" class="voice-hint">{{voiceStatus===1 ? '松开结束' : '识别中…'}}</view>
+    <view wx:if="{{voiceText}}" class="voice-preview">识别：{{voiceText}}</view>
+    <view wx:if="{{voiceError}}" class="voice-err">{{voiceError}}</view>
+  </view>
+
+  <!-- 查账 Tab：确定性面板，直调云函数，不经过模型（好测） -->
+  <view wx:if="{{activeTab==='query'}}" class="tab-content query-panel">
+    <view class="query-presets">
+      <view wx:for="{{queryPresets}}" wx:key="key"
+        class="preset-btn {{activeQueryKey === item.key ? 'preset-selected' : ''}}" data-key="{{item.key}}" bindtap="onQueryPreset">{{item.label}}</view>
+      <view class="preset-btn preset-custom {{activeQueryKey === 'custom' ? 'preset-selected' : ''}}" bindtap="onOpenRangePicker">自定义</view>
+    </view>
+
+    <!-- 自定义区间选择器弹窗 -->
+    <view wx:if="{{showRangePicker}}" class="range-mask" bindtap="onCloseRangePicker">
+      <view class="range-card" catchtap="noop">
+        <view class="range-title">选择时间段</view>
+        <view class="range-row">
+          <text class="range-label">从</text>
+          <picker mode="date" value="{{rangeFrom}}" end="{{rangeTo || '2099-12-31'}}" bindchange="onRangeFromChange">
+            <view class="range-picker">{{rangeFrom || '选择开始日期'}}</view>
+          </picker>
+        </view>
+        <view class="range-row">
+          <text class="range-label">到</text>
+          <picker mode="date" value="{{rangeTo}}" start="{{rangeFrom || '1970-01-01'}}" bindchange="onRangeToChange">
+            <view class="range-picker">{{rangeTo || '选择结束日期'}}</view>
+          </picker>
+        </view>
+        <view class="range-actions">
+          <button class="range-btn range-btn-cancel" bindtap="onCloseRangePicker">取消</button>
+          <button class="range-btn range-btn-confirm" bindtap="onQueryRange">查询</button>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{queryLoading}}" class="query-loading">查询中…</view>
+    <view wx:elif="{{queryError}}" class="query-error">{{queryError}}</view>
+
+    <block wx:elif="{{queryResult}}">
+      <view class="query-summary">
+        <view class="q-label">{{queryResult.label}}共记 {{queryResult.count}} 笔</view>
+        <view class="q-amount">支出 ¥{{queryResult.expenseTotal < 0 ? queryResult.expenseTotal * -1 : queryResult.expenseTotal}}</view>
+        <view wx:if="{{queryResult.incomeTotal > 0}}" class="q-income">收入 ¥{{queryResult.incomeTotal}}</view>
+        <view wx:if="{{queryResult.byCategory.length}}" class="q-cats">
+          <text wx:for="{{queryResult.byCategory}}" wx:key="category" class="q-cat">{{item.category}} ¥{{item.amount < 0 ? item.amount * -1 : item.amount}} </text>
+        </view>
+      </view>
+
+      <view wx:if="{{queryResult.records.length}}" class="query-records">
+        <view wx:for="{{queryResult.records}}" wx:key="_id" class="q-record">
+          <view class="q-rec-main">
+            <text class="q-rec-cat">{{item.category}}</text>
+            <text class="q-rec-note">{{item.note || ''}}</text>
+          </view>
+          <text class="q-rec-amt {{item.type==='income'?'amt-in':'amt-out'}}">{{item.type==='income'?'+':'-'}}¥{{item.amount < 0 ? item.amount * -1 : item.amount}}</text>
+          <text class="q-rec-date">{{item.createdAt}}</text>
+          <view class="q-rec-ops">
+            <text class="q-op q-op-edit" data-rec="{{item}}" bindtap="onEditRecord">改</text>
+            <text class="q-op q-op-del" data-rec="{{item}}" bindtap="onDelRecord">删</text>
+          </view>
+        </view>
+      </view>
+      <view wx:else class="query-empty">{{queryResult.label}}还没记账呢～</view>
+    </block>
+
+    <view wx:else class="query-hint">点上面的按钮查账，不用打字</view>
+  </view>
+
+  <!-- 拍照记账浮动按钮（仅记账 tab 显示；加号菜单展开时上移避免重叠） -->
+  <view wx:if="{{activeTab==='record'}}" class="photo-fab {{toolsOpen ? 'photo-fab-up' : ''}}" bindtap="onPhotoAccount">
     <view class="photo-fab-icon">
       <view class="cam-body"></view>
       <view class="cam-lens"></view>
@@ -49,4 +128,5 @@
       <text>识别小票中…</text>
     </view>
   </view>
+
 </view>

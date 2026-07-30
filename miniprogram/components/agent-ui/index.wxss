@@ -1,7 +1,7 @@
 /* components/agent-ui/index.wxss */
 .agent-ui {
   width: 750rpx;
-  height: 100vh;
+  height: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -14,6 +14,59 @@
 
 .showBotName {
   height: 62px;
+}
+
+/* 消息工具条图标（复制/分享等）：补显式宽高，避免 svg 渲染成空圈 */
+.tool_btn {
+  width: 44rpx;
+  height: 44rpx;
+  display: block;
+}
+.share_btn {
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  line-height: normal;
+  border: none;
+  width: 44rpx;
+  height: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.share_btn::after {
+  border: none;
+}
+
+/* 消息工具条文字按钮（复制/分享）：保证可见，不依赖 svg 渲染 */
+.tool_text {
+  font-size: 24rpx;
+  color: #8b8b8b;
+  padding: 4rpx 0;
+  width: 96rpx;
+  text-align: center;
+  background: #f3f5f8;
+  border-radius: 20rpx;
+  line-height: 1.6;
+}
+.share_btn_text {
+  font-size: 24rpx !important;
+  color: #8b8b8b !important;
+  padding: 4rpx 0 !important;
+  width: 96rpx !important;
+  min-width: 96rpx !important;
+  max-width: 96rpx !important;
+  text-align: center;
+  background: #f3f5f8 !important;
+  border-radius: 20rpx;
+  line-height: 1.6;
+  margin: 0 !important;
+  border: none !important;
+  box-sizing: border-box !important;
+}
+.share_btn_text::after {
+  border: none !important;
+  display: none !important;
 }
 
 .hiddenBotName {
@@ -282,7 +335,7 @@
   height: 50px;
   display: flex;
   align-items: center;
-  gap: 10rpx;
+  gap: 28rpx;
 }
 
 .left_btns {
@@ -295,6 +348,32 @@
 .set {
   width: 58rpx;
   height: 58rpx;
+}
+
+/* 发送图标：加大显示 */
+.send-set {
+  width: 44rpx;
+  height: 44rpx;
+}
+/* 发送按钮容器：比普通 .set 稍大，更醒目 */
+.send-btn {
+  width: 68rpx;
+  height: 68rpx;
+}
+
+/* 语音图标录音中：明显高亮（蓝底圆形 + 脉冲） */
+.voice-active {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  border-radius: 50%;
+  padding: 12rpx;
+  box-sizing: content-box;
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 172, 254, 0.5); }
+  50% { transform: scale(1.12); box-shadow: 0 0 0 16rpx rgba(79, 172, 254, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 172, 254, 0); }
 }
 
 .send-set {

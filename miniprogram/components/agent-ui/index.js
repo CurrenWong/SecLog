@@ -1,4 +1,4 @@
-// components/agent-ui/index.js
+﻿// components/agent-ui/index.js
 import { checkConfig, randomSelectInitquestion, getCloudInstance, commonRequest, sleep } from "./tools";
 import md5 from "./md5.js";
 Component({
@@ -148,6 +148,7 @@ Component({
     moveThreshold: 50, // 滑动阈值（单位：px）
     longPressTimer: null, // 长按定时器
     recorderManager: null,
+    voiceActive: false, // 左侧语音图标录音高亮态
     recordOptions: {
       duration: 60000, // 最长60s
       sampleRate: 44100,
@@ -245,7 +246,7 @@ Component({
         // 拉一遍新会话列表
         await this.resetFetchConversationList();
       }
-      if (this.data.bot.voiceSettings?.enable) {
+      if (this.data.bot.voiceSettings && voiceSettings.enable) {
         // 初始化录音管理器
         await this.initRecordManager();
         // 提前获取语音权限
@@ -322,7 +323,7 @@ Component({
                           path: `bots/${this.data.bot.botId}/speech-to-text`,
                           data: {
                             url: fileList[0].tempFileURL,
-                            engSerViceType: this.data.bot.voiceSettings?.inputType,
+                            engSerViceType: this.data.bot.voiceSettings && voiceSettings.inputType,
                             voiceFormat: "aac",
                           }, //
                           method: "POST",
@@ -382,9 +383,22 @@ Component({
         recorderManager: recorderManager,
       });
     },
+    // 语音图标（输入框左侧）：冒泡给父页，由 chatBot 用微信同声传译接管
+    onVoiceIconStart(e) {
+      this.setData({ voiceActive: true });
+      this.triggerEvent('voiceStart');
+    },
+    onVoiceIconEnd(e) {
+      this.setData({ voiceActive: false });
+      this.triggerEvent('voiceEnd');
+    },
+    onVoiceIconCancel(e) {
+      this.setData({ voiceActive: false });
+      this.triggerEvent('voiceCancel');
+    },
     handleChangeInputType(e) {
       // 检查当前语音能力权限
-      if (!this.data.bot.voiceSettings?.enable) {
+      if (!this.data.bot.voiceSettings && voiceSettings.enable) {
         wx.showModal({
           title: "提示",
           content: "请前往腾讯云开发平台启用语音输入输出能力",
@@ -461,7 +475,7 @@ Component({
       //   pageNumber: this.data.page,
       //   pageSize: this.data.size,
       //   sort: "desc",
-      //   conversationId: this.data.conversation?.conversationId || undefined,
+      //   conversationId: (this.data.conversation && this.data.conversation.conversationId) || undefined,
       // });
       // if (res.recordList) {
       // }
@@ -595,7 +609,7 @@ Component({
                   transformConversations: that.transformConversationList(updatedConversations),
                 });
 
-                if (that.data.conversation?.conversationId === conversation.conversationId) {
+                if ((that.data.conversation && that.data.conversation.conversationId) === conversation.conversationId) {
                   that.clearChatRecords();
                   if (updatedConversations.length > 0) {
                     that.handleClickConversation({
@@ -1026,8 +1040,8 @@ Component({
               pageSize: this.data.size,
               sort: "desc",
             };
-            if (this.data.conversation?.conversationId) {
-              getRecordsReq.conversationId = this.data.conversation?.conversationId;
+            if ((this.data.conversation && this.data.conversation.conversationId)) {
+              getRecordsReq.conversationId = (this.data.conversation && this.data.conversation.conversationId);
             }
             const res = await ai.bot.getChatRecords(getRecordsReq);
             if (res.recordList) {
@@ -1075,9 +1089,9 @@ Component({
                       if (origin_msg_obj.aiResHistory) {
                         const transformToolCallList = this.transformToolCallHistoryList(origin_msg_obj.aiResHistory);
                         transformItem.toolCallList = transformToolCallList;
-                        const toolCallErr = transformToolCallList.find((item) => item.error)?.error;
+                        const toolCallErr = (transformToolCallList.find((item) => item.error) && transformToolCallList.find((item) => item.error).error);
                         // console.log("toolCallErr", toolCallErr);
-                        if (toolCallErr?.error?.message) {
+                        if ((toolCallErr && toolCallErr.error && toolCallErr.error.message)) {
                           transformItem.error = toolCallErr.error.message;
                           transformItem.reqId = item.trace_id || "";
                         }
@@ -1471,8 +1485,16 @@ Component({
       this.autoToBottom();
 
       // 宿主页请求抑制本次模型回复（如秒记已确定意图并自行生成回复）→ 只渲染用户气泡，不调模型
+      // 同时移除上面刚 push 的空 assistant 占位记录（content:"" 的那条），
+      // 避免"空白头像气泡 + 真实回复气泡"出现两个头像（[UI-2026-07-16-001]）
       if (this.data.suppressModelReply) {
-        this.setData({ suppressModelReply: false, chatStatus: 0 });
+        const leftover = this.data.chatRecords;
+        const last = leftover[leftover.length - 1];
+        let trimmed = leftover;
+        if (last && last.role === 'assistant' && !last.content) {
+          trimmed = leftover.slice(0, -1);
+        }
+        this.setData({ suppressModelReply: false, chatStatus: 0, chatRecords: trimmed });
         return;
       }
 
@@ -1516,7 +1538,7 @@ Component({
             searchEnable: this.data.useWebSearch,
           };
 
-          if (this.data.conversation?.conversationId) {
+          if ((this.data.conversation && this.data.conversation.conversationId)) {
             sendReq.conversationId = this.data.conversation.conversationId;
           }
 
@@ -1592,7 +1614,7 @@ Component({
                   if (typeof error.message === "string") {
                     errToolCallObj = lastValue.toolCallList[lastValue.toolCallList.length - 1];
                   } else {
-                    if (error.message?.toolCallId) {
+                    if ((error.message && error.message.toolCallId)) {
                       errToolCallObj = lastValue.toolCallList.find((item) => item.id === error.message.toolCallId);
                     }
                   }
@@ -1732,7 +1754,7 @@ Component({
             }
             // 超出token数限制
             if (type === "finish" && finish_reason === "length") {
-              const completionTokens = usage?.completionTokens || 0;
+              const completionTokens = (usage && usage.completionTokens) || 0;
               lastValue.error = completionTokens
                 ? `当前输出token长度为 ${completionTokens}，已超过最大限制，请重新提问`
                 : "已超过最大限制，请重新提问";
@@ -1993,9 +2015,11 @@ Component({
       });
     },
     handleClickTools: function () {
+      const show = !this.data.showTools;
       this.setData({
-        showTools: !this.data.showTools,
+        showTools: show,
       });
+      this.triggerEvent('toolsToggle', { show });
     },
     handleClickWebSearch: function () {
       if (!this.data.useWebSearch && !this.data.bot.searchEnable) {
@@ -2028,7 +2052,7 @@ Component({
           header: {},
           data: {
             text: content,
-            voiceType: this.data.bot.voiceSettings?.outputType,
+            voiceType: this.data.bot.voiceSettings && voiceSettings.outputType,
           },
           method: "POST",
           success: (res) => {
@@ -2088,7 +2112,7 @@ Component({
     handlePlayAudio: async function (e) {
       console.log("handlePlayAudio e", e);
       // 判断是否打开语音能力
-      if (!this.data.bot.voiceSettings?.enable) {
+      if (!this.data.bot.voiceSettings && voiceSettings.enable) {
         wx.showModal({
           title: "提示",
           content: "请前往腾讯云开发平台启用语音输入输出能力",
@@ -2376,9 +2400,9 @@ Component({
       } = this.data;
       // 1. UI 预处理,如果是用户消息,则添加一个 AI 占位消息
       const newMessages = [...messages];
-      if (message?.[0]?.role === "user") {
+      if ((message && message[0] && message[0].role) === "user") {
         const aiMsg = { id: "assistant_message_" + Date.now(), role: "assistant", parts: [] };
-        newMessages.push(message?.[0], aiMsg);
+        newMessages.push((message && message[0]), aiMsg);
         this.setData({
           messages: newMessages,
         });

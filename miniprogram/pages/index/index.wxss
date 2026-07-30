@@ -1,6 +1,9 @@
 .home {
   padding: 32rpx;
   min-height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   background-color: #f7f8fa;
 }
 
@@ -135,6 +138,18 @@
   padding: 28rpx;
   margin-bottom: 32rpx;
   box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.05);
+  flex: 1;
+  min-height: 0;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 记录列表在卡片内独立滚动，不撑爆整页 */
+.recent-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .recent-head {

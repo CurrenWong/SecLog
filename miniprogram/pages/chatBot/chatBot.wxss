@@ -1,5 +1,24 @@
 /* pages/chatBot/chatBot.wxss */
 
+/* 整页 flex 纵向，占满屏幕，避免 tab 切换后内容超长 */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+/* 内容区：tab-bar 之下，flex:1 撑满，agent-ui 内部自行滚动 */
+.tab-content {
+  flex: 1;
+  min-height: 0; /* 关键：允许 flex 子项收缩，内部滚动才生效 */
+  position: relative;
+}
+/* 记账 tab 内的 agent-ui 容器填满内容区 */
+.tab-content .agent-ui {
+  height: 100%;
+}
+
 /* 拍照记账浮动按钮 */
 .photo-fab {
   position: fixed;
@@ -16,6 +35,10 @@
   border-radius: 50%;
   box-shadow: 0 8rpx 24rpx rgba(0, 150, 255, 0.35);
   z-index: 100;
+}
+/* 加号菜单展开时上移，避免和底部工具栏重叠 */
+.photo-fab-up {
+  bottom: 520rpx;
 }
 /* 纯 CSS 相机图标，不依赖系统 emoji 字体 */
 .photo-fab-icon {
@@ -168,4 +191,281 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* 顶部双 Tab */
+.tab-bar {
+  display: flex;
+  background: #fff;
+  border-bottom: 1rpx solid #eee;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.tab-item {
+  flex: 1;
+  text-align: center;
+  height: 88rpx;
+  line-height: 88rpx;
+  font-size: 30rpx;
+  color: #888;
+  position: relative;
+}
+.tab-active {
+  color: #4facfe;
+  font-weight: 600;
+}
+.tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 56rpx;
+  height: 6rpx;
+  border-radius: 3rpx;
+  background: #4facfe;
+}
+
+/* 查账面板 */
+.query-panel {
+  padding: 28rpx;
+  height: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+.query-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18rpx;
+  margin-bottom: 32rpx;
+}
+.preset-btn {
+  padding: 18rpx 34rpx;
+  background: #fff;
+  color: #445;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  border: 1rpx solid #eef0f3;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease;
+}
+.preset-btn:active {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
+  border-color: transparent;
+  transform: scale(0.96);
+}
+/* 选中态：持久高亮（区别于 :active 的瞬间按压缩放） */
+.preset-selected {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+  box-shadow: 0 6rpx 16rpx rgba(79, 172, 254, 0.35);
+}
+/* 自定义入口：平时与预设按钮一致；选中（custom 态）时由 .preset-selected 高亮 */
+.preset-custom {
+  /* 无特殊基础样式，回退到 .preset-btn 默认白底 */
+}
+
+/* 自定义区间选择器弹窗 */
+.range-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.range-card {
+  width: 580rpx;
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 40rpx 36rpx;
+  box-shadow: 0 12rpx 48rpx rgba(0, 0, 0, 0.18);
+}
+.range-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 36rpx;
+  color: #222;
+}
+.range-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 28rpx;
+}
+.range-label {
+  width: 60rpx;
+  font-size: 28rpx;
+  color: #666;
+  flex-shrink: 0;
+}
+.range-picker {
+  flex: 1;
+  height: 76rpx;
+  line-height: 76rpx;
+  border: 1rpx solid #e0e0e0;
+  border-radius: 12rpx;
+  padding: 0 20rpx;
+  font-size: 28rpx;
+  background: #fafafa;
+  color: #333;
+}
+.range-actions {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 20rpx;
+}
+.range-btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  border-radius: 40rpx;
+  font-size: 30rpx;
+  margin: 0;
+}
+.range-btn-cancel {
+  background: #f0f0f0;
+  color: #666;
+}
+.range-btn-confirm {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
+}
+.query-loading,
+.query-error,
+.query-hint,
+.query-empty {
+  text-align: center;
+  color: #999;
+  font-size: 28rpx;
+  margin-top: 80rpx;
+}
+.query-error {
+  color: #e57373;
+}
+.query-summary {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  border-radius: 20rpx;
+  padding: 36rpx;
+  color: #fff;
+  margin-bottom: 28rpx;
+}
+.q-label {
+  font-size: 26rpx;
+  opacity: 0.9;
+}
+.q-amount {
+  font-size: 56rpx;
+  font-weight: 700;
+  margin-top: 12rpx;
+}
+.q-income {
+  font-size: 26rpx;
+  opacity: 0.9;
+  margin-top: 6rpx;
+}
+.q-cats {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  opacity: 0.95;
+}
+.query-records {
+  background: #fff;
+  border-radius: 20rpx;
+  overflow: hidden;
+}
+.q-record {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 28rpx;
+  border-bottom: 1rpx solid #f2f2f2;
+}
+.q-rec-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.q-rec-cat {
+  font-size: 30rpx;
+  color: #333;
+  font-weight: 500;
+}
+.q-rec-note {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 4rpx;
+}
+.q-rec-amt {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin: 0 16rpx;
+}
+.amt-out {
+  color: #ff6b6b;
+}
+.amt-in {
+  color: #2ecc71;
+}
+.q-rec-date {
+  font-size: 22rpx;
+  color: #bbb;
+  width: 180rpx;
+  text-align: right;
+}
+/* 单条记录的 改/删 操作 */
+.q-rec-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  margin-left: 16rpx;
+  flex-shrink: 0;
+}
+.q-op {
+  font-size: 22rpx;
+  padding: 6rpx 18rpx;
+  border-radius: 20rpx;
+  text-align: center;
+}
+.q-op-edit {
+  background: #e8f3ff;
+  color: #4facfe;
+}
+.q-op-del {
+  background: #ffecec;
+  color: #ff6b6b;
+}
+.q-op:active {
+  opacity: 0.6;
+}
+
+/* 语音识别状态提示（输入框左侧图标触发） */
+.voice-hint {
+  position: absolute;
+  bottom: 140rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 20rpx 48rpx;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 600;
+  border-radius: 44rpx;
+  z-index: 50;
+  box-shadow: 0 8rpx 24rpx rgba(79, 172, 254, 0.45);
+  animation: voice-pulse 1s ease-in-out infinite;
+}
+.voice-preview {
+  margin: 8rpx 24rpx;
+  font-size: 26rpx;
+  color: #4facfe;
+}
+.voice-err {
+  margin: 8rpx 24rpx;
+  font-size: 24rpx;
+  color: #ff6b6b;
 }

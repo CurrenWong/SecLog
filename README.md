@@ -1,14 +1,15 @@
-# 秒记 (MiaoJi)
+# 秒记账 (MiaoJi)
 
 > 说话即记账的 AI 记账微信小程序。基于腾讯云开发（CloudBase）+ 大模型，用户用自然语言说出消费，AI 自动识别金额、分类并保存。
 
 ## 项目一句话
 
-**秒记** = 微信小程序 + 云开发（CloudBase）大模型 + 记账云函数。首页展示收支汇总与最近记录，对话页用自然语言记账 / 查询，意图理解全部在端侧完成。
+**秒记账** = 微信小程序 + 云开发（CloudBase）大模型 + 记账云函数。首页展示收支汇总与最近记录，对话页用自然语言记账 / 查询，意图理解全部在端侧完成。
 
 ## 功能
 
 - 💬 **对话记账**：说"午饭花了38块"，自动识别金额 + 分类（餐饮）入库
+- 🧾 **一句话多笔记账**（已上线）：说"早饭12，午饭38，晚饭45"一次性记多笔；正则只抽线索，最终由模型判金额 / 分类 / 归属（处理 AA 等复杂归因）
 - 🔍 **自然语言查询**（已上线）：
   - "这个月花了多少" → 月总览（支出 / 收入 / 净 + 分类 Top + 逐笔明细）
   - "餐饮花了多少" → 单类查询
@@ -34,14 +35,18 @@
 
 ```
 用户输入
-  ↓ parseExpense / parseQuery / parseUndo（正则抽线索，仅喂模型辅助）
-  ↓ classifyIntent（大模型判意图，结合滑动窗口 history + 上一轮 ctx）
+  ↓ parseExpense / parseExpenses / parseQuery / parseUndo（正则抽线索，仅喂模型辅助）
+  ↓ classifyIntent（大模型判意图，结合滑动窗口 history + 上一轮 ctx + 正则多笔线索）
   ↓ switch(action)：
-      record   → miaojiRecord(add) + ✅ 卡片
-      correct  → miaojiRecord(update 最近一笔) + ✅ 卡片
-      query    → miaojiRecord(stats/summary/list) + 📊 模板（真实数据，代码生成）
-      undo     → miaojiRecord(list+delete) + 🗑️ 卡片
-      chat     → 放行 agent-ui 模型自由对话（唯一模型发声的分支）
+      record       → miaojiRecord(add) + ✅ 卡片
+      multi_record → miaojiRecord(add) × N + ✅ 多笔汇总卡片（模型逐条校验+归一）
+      correct      → miaojiRecord(update 最近一笔) + ✅ 卡片
+      query        → miaojiRecord(stats/summary/list) + 📊 模板（真实数据，代码生成）
+      undo         → miaojiRecord(list+delete) + 🗑️ 卡片
+      chat         → 放行 agent-ui 模型自由对话（唯一模型发声的分支）
+```
+
+**为什么正则只做线索，不直接落库？** 一句话多笔 / AA 分账 / 混合句（如"午饭和同事AA花了76我付的"）的语义正则处理不了——这些必须靠模型做最终判定。`parseExpenses` 抽到的候选笔数喂给模型，模型返回 `multi_record` + records 数组（可修正正则的误分类 / 补归因），代码按模型结果批量落库。
 
 **拍照记账分支**（对话页浮动按钮触发）：
 ```
@@ -71,7 +76,7 @@ miaojiRecord(login) → 取 openid/unionid，upsert users 集合
 - 对话 UI 复用 `components/agent-ui` 组件（bot 模式，直连大模型）
 - 意图理解：`miniprogram/utils/extractByModel.js`（`classifyIntent` + prompt）
 - 记账数据：`cloudfunctions/miaojiRecord/` 云函数（增 / 查 / 删 / 汇总 / 统计）
-- 本地测试：`ci-tools/`（Jest，141 用例，覆盖意图路由 / 云函数 / 多轮上下文）
+- 本地测试：`ci-tools/`（Jest，160 用例全绿，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成）
 - 基础库最低 `3.8.1`，本地推荐 `3.16.2`（见 `project.private.config.json`）
 
 ## 目录结构
@@ -91,7 +96,8 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 │   │   └── toolCard/           ← 地图/天气/商家等工具卡（agent-ui 依赖，勿删）
 │   ├── utils/
 │   │   ├── extractByModel.js   ← ⭐ classifyIntent：大模型意图判断（含多轮 history）
-│   │   ├── parseExpense.js     ← 正则抽金额/分类（辅助线索）
+│   │   ├── parseExpense.js     ← 正则抽金额/分类/查询/撤回（分层线索）
+│   │   ├── fallbackHint.js     ← 模型失败时的反问/万能提示生成
 │   │   └── collectStreamText.js← 流式响应文本收集
 │   ├── app.js / app.json / app.wxss
 │   └── package.json / sitemap.json
@@ -100,7 +106,7 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 ├── avatars/                     ← 用户头像（chooseAvatar 上传的云存储落地目录镜像，git 跟踪占位）
 ├── images/                      ← 小程序静态图（app-logo / default-avatar 等）
 ├── ci-tools/                   ← ⭐ 本地测试 + 编译（Jest + compile.js 出真机二维码）
-│   ├── tests/                  ← 141 用例（意图路由 / 云函数 / 多轮 / 页面集成）
+│   ├── tests/                  ← 161 用例（意图路由 / 云函数 / 多轮 / 页面集成）
 │   └── compile.js              ← 微信开发者工具 CLI 编译，生成真机预览二维码
 ├── project.config.json         ← 微信开发者工具项目配置
 ├── project.private.config.json ← 本地私有配置（不提交）
@@ -119,9 +125,11 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 
 ```bash
 cd ci-tools
-npx jest            # 跑全量 141 用例（意图路由 / 云函数 / 多轮上下文 / 页面集成）
+npx jest            # 跑全量 161 用例（意图路由 / 云函数 / 多轮上下文 / 页面集成）
 npx jest tests/extractByModel.test.js   # 单文件
 ```
+
+> **mock 提示**：`__mocks__/wx-server-sdk.js` 用普通对象 + 函数方法模拟 CloudBase command 对象的链式调用（`_.gte(v).and(_.lt(e))`），支持 `$gte`/`$lt`/`$and` 复合条件。如果新增云函数用了其他 command 操作（如 `.in`/`.elemMatch`），需在 mock 里同步实现。
 
 出真机预览二维码（需微信开发者工具 CLI）：
 
@@ -153,10 +161,15 @@ npm i -g @cloudbase/cli
 |---|---|
 | `miniprogram/` 版本控制 | ✅ 已纳入 git |
 | 记账后端 | ✅ `miaojiRecord` 云函数 + `miaoji_records` 集合已上线 |
-| 意图路由（record/query/undo/correct/chat） | ✅ 前端 classifyIntent 完成 |
+| 意图路由（record/multi_record/query/undo/correct/chat） | ✅ 前端 classifyIntent 完成 |
+| 一句话多笔记账（multi_record） | ✅ 已上线（正则抽线索 + 模型最终判定） |
 | 多轮上下文（滑动窗口 10 轮 + 远处摘要） | ✅ 已上线 |
 | 被动填槽（记一笔→追问→补全） | ✅ 已上线 |
-| 本地测试 | ✅ 141 用例全绿 |
+| 本地测试 | ✅ 161 用例全绿 |
+| 意图识别分层（正则优先 + 模型兜底） | ✅ 已上线（1.0.9） |
+| 分类明细（"餐饮明细"只显示该类别） | ✅ 已上线（1.0.9） |
+| 拼音/英文输入识别（newnew100） | ✅ 已上线（1.0.6） |
+| 模型降级失败行为（不反问，直接执行） | ✅ 已上线（1.0.7） |
 | 拍照记账 | ✅ 已上线（云函数 cloud.ai() + qwen3.5-flash 多模态识别） |
 | 登录 + 个人中心 | ✅ 已上线（静默登录 + users 集合 + 头像/昵称编辑） |
 | 记账明细页 | ✅ 已上线（列表 / 编辑 / 删除，openid 隔离） |
@@ -170,12 +183,11 @@ npm i -g @cloudbase/cli
 
 ---
 
-**最后更新**: 2026-07-16 — 上线拍照记账（cloud.ai()+qwen3.5-flash 多模态）、登录+个人中心、记账明细页；品牌更名「秒记」→「秒记账」；README 同步更新
-
----
-
 ## ⚠️ 部署提醒（改完必看）
 
 - **云函数改完必须重传**：`miaojiRecord` 的 `ocr`/`login`/`updateProfile` 是新增 action，已在 `seclog-d1g8no5pc45e643aa` 环境部署过；但**本地改了 ≠ 线上跑新版**，每次改云函数代码都要 `./uploadCloudFunction.sh` 重新上传（见「云函数部署」一节）。
+- **意图识别硬规则（1.0.7 起）**：正则命中 `regexExpense`/`queryHint`/`undoHint` 时，**无论模型说什么/是否失败，都强制执行对应操作**（doAdd/tryQuery/tryUndo）。目的是杜绝"模型幻觉已记账但代码没写库"；模型角色从唯一决策者变为"正则未覆盖场景的兜底"。
 - **wx-server-sdk 版本**：`cloud.ai()` 通道需要 `wx-server-sdk >= 3.x`，老版本 2.6.3 无此 API，会在 `ocr` 时返回 `AI_UNAVAILABLE`。
 - **前端静默登录**：`app.js` 在 `onLaunch` 调 `miaojiRecord(login)`；若未部署 `login` action，个人中心会拿不到 openid 但记账仍按 openid 隔离正常工作。
+- **分类明细**：1.0.9 起"餐饮明细"只显示餐饮类记录（之前返回全部类别，是 bug）。
+- **multi_record 与正则的边界**：`parseExpense.js` 必须导出 `parseExpenses`（之前漏导出导致 `parseExpenses is not a function`），且 `classifyIntent` 的 `opts` 必须解构 `regexExpenses`（之前漏解构导致 `ReferenceError` 被 catch 吞掉、整条链路静默返回 null）。改这两块时务必跑 `tests/extractByModel.test.js` 验证。
