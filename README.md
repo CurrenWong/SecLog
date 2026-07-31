@@ -25,7 +25,7 @@
 - ↩️ **撤回 / 更正**："记错了" 撤回最近一笔；"想起来错了，是60" 更正金额
 - 📊 **首页汇总**：今日 / 本月收支 + 最近 5 笔，下拉刷新
 - 🛡️ **误记防护**：裸数字（"我身高180""墙高3块砖"）不记账；含消费意图词（"午饭38"）才记
-- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票后由云函数 `cloud.ai()` + `qwen3.5-flash` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、默认不预填防错账）再入库
+- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数 `cloud.ai()` + `hunyuan-2.0-instruct` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、默认不预填防错账）再入库。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
 - 👤 **登录 + 个人中心**（已上线）：进入自动静默登录（云函数 `login` 取 openid/unionid，落地 `users` 集合）；个人中心可改头像（chooseAvatar 上传 `avatars/`）/昵称、看本月汇总与笔数、退出登录
 - 📋 **记账明细页**（已上线）：按最近 30 天列出全部记录，支持编辑（金额/类别/备注）与删除，数据按 openid 隔离
 
@@ -224,3 +224,28 @@ npm i -g @cloudbase/cli
 - **前端静默登录**：`app.js` 在 `onLaunch` 调 `miaojiRecord(login)`；若未部署 `login` action，个人中心会拿不到 openid 但记账仍按 openid 隔离正常工作。
 - **分类明细**：1.0.9 起"餐饮明细"只显示餐饮类记录（之前返回全部类别，是 bug）。
 - **multi_record 与正则的边界**：`parseExpense.js` 必须导出 `parseExpenses`（之前漏导出导致 `parseExpenses is not a function`），且 `classifyIntent` 的 `opts` 必须解构 `regexExpenses`（之前漏解构导致 `ReferenceError` 被 catch 吞掉、整条链路静默返回 null）。改这两块时务必跑 `tests/extractByModel.test.js` 验证。
+
+## 🧪 真 OCR 集成测试（拍照记账 prompt 回归）
+
+`jest` 的 `photoAccount.test.js` 只 mock OCR（不调真模型），无法验证"改了 prompt 后真能识别支付宝 UI 截图"。要跑**真 OCR**，用独立脚本：
+
+```bash
+# 前置：装 tcb CLI + 登录（只需一次）
+npm i -g @cloudbase/cli
+cloudbase login            # 扫码登录
+
+# 跑真 OCR 测试（读 fixture → 调 visionProbe → 断言）
+node ci-tools/scripts/realOcrTest.js
+
+# 对比：用旧 prompt（"识别这张小票..."）跑同一张图，看修复前后差异
+node ci-tools/scripts/realOcrTest.js --prompt old
+
+# CI 严格模式（失败 exit code 1）
+node ci-tools/scripts/realOcrTest.js --strict
+```
+
+- **fixture**：`ci-tools/fixtures/alipay_bill_detail.jpg`（支付宝账单详情页，git 跟踪，作为永久回归基线）
+- **云函数**：`visionProbe`（`cloudfunctions/visionProbe/index.js`）接受 `imageUrl` + `prompt` 参数，已部署到 `seclog-d1g8no5pc45e643aa`
+- **断言**：`amount≈76.80` / `category∈{娱乐,其他}` / `date` 含 `2026-07-31` / `merchant` 含「影城」——验证新 prompt 正确忽略干扰项（时间数字、积分、抵扣券、状态文字），从「商品说明」字段取商家
+- **费用**：每次调用约 4-15s + 模型 token（生产 CloudBase 资源包已购，按需计费）
+- **注意**：脚本**不进 jest 默认套件**（避免每次跑单测都烧 token + 依赖云凭证）。手动跑或 CI 可选门控。

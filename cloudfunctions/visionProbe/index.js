@@ -5,6 +5,7 @@ const TEST_IMG = 'data:image/png;base64,iVBORwKGgoAAAANSUhEUgAAAMgAAAEECAIAAADiZ
 
 exports.main = async (event) => {
   const imageUrl = event.imageUrl || TEST_IMG
+  const prompt = event.prompt || '识别这张小票，返回JSON {amount,merchant,category,date}。category从[餐饮,交通,购物,居家,医疗,娱乐,教育,其他]选。'
   try {
     // 服务端 AI 走 @cloudbase/node-sdk app.ai()（wx-server-sdk 无 cloud.ai()）
     const ai = app.ai()
@@ -15,13 +16,13 @@ exports.main = async (event) => {
       messages: [{
         role: 'user',
         content: [
-          { type: 'text', text: '识别这张小票，返回JSON {amount,merchant,category,date}。category从[餐饮,交通,购物,居家,医疗,娱乐,教育,其他]选。' },
+          { type: 'text', text: prompt },
           { type: 'image_url', image_url: { url: imageUrl } },
         ],
       }],
     })
     const text = res && (res.text || (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content))
-    return { success: true, text: String(text).slice(0, 400) }
+    return { success: true, text: String(text).slice(0, 800) }
   } catch (e) {
     return { success: false, error: String(e && e.message || e), stack: (e && e.stack || '').slice(0, 400) }
   }
