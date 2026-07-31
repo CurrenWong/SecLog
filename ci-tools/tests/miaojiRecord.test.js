@@ -119,16 +119,16 @@ describe('miaojiRecord 云函数', () => {
 // T2 + T3: parseExpense 解析 + 端到端记账链路
 describe('parseExpense 文本解析（T2）', () => {
   test('支出：午饭花了38块 → -38 / 餐饮', () => {
-    expect(parseExpense('午饭花了38块')).toEqual({ amount: -38, category: '餐饮', note: '午饭花了' })
+    expect(parseExpense('午饭花了38块')).toEqual({ amount: -38, category: '餐饮', note: '午饭花了', _date: null })
   })
   test('支出：打车45 → -45 / 交通', () => {
-    expect(parseExpense('打车45')).toEqual({ amount: -45, category: '交通', note: '打车' })
+    expect(parseExpense('打车45')).toEqual({ amount: -45, category: '交通', note: '打车', _date: null })
   })
   test('支出：买衣服200元 → -200 / 购物', () => {
-    expect(parseExpense('买衣服200元')).toEqual({ amount: -200, category: '购物', note: '买衣服' })
+    expect(parseExpense('买衣服200元')).toEqual({ amount: -200, category: '购物', note: '买衣服', _date: null })
   })
   test('收入：收到工资8000 → +8000 / 收入', () => {
-    expect(parseExpense('收到工资8000')).toEqual({ amount: 8000, category: '收入', note: '收到工资' })
+    expect(parseExpense('收到工资8000')).toEqual({ amount: 8000, category: '收入', note: '收到工资', _date: null })
   })
   test('无金额的闲聊 → null', () => {
     expect(parseExpense('今天天气不错')).toBeNull()
@@ -192,10 +192,10 @@ describe('parseQuery 查询意图（PQ）', () => {
 describe('B1 误记防护（非消费数字不记）', () => {
   // —— 应记（正常消费/收入，带动作词或单位）——
   test('正常：奖金500元 → +500 收入', () => {
-    expect(parseExpense('奖金500元')).toEqual({ amount: 500, category: '收入', note: '奖金' })
+    expect(parseExpense('奖金500元')).toEqual({ amount: 500, category: '收入', note: '奖金', _date: null })
   })
   test('正常：午饭38块 → -38 餐饮', () => {
-    expect(parseExpense('午饭38块')).toEqual({ amount: -38, category: '餐饮', note: '午饭' })
+    expect(parseExpense('午饭38块')).toEqual({ amount: -38, category: '餐饮', note: '午饭', _date: null })
   })
   test('正常：花了120元买菜 → -120 其他', () => {
     const r = parseExpense('花了120元买菜')
@@ -228,33 +228,33 @@ describe('B1 误记防护（非消费数字不记）', () => {
   test('防护：奖金500（无单位）→ +500 收入（收入词是明确意图，应记，不保守漏记）', () => {
     // 注：此前 B1 保守设计把"奖金500"判 null，但"奖金"是明确收入词，应记。
     // 与"午饭38"同理（类目词即消费意图），收入词即收入意图。
-    expect(parseExpense('奖金500')).toEqual({ amount: 500, category: '收入', note: '奖金' })
+    expect(parseExpense('奖金500')).toEqual({ amount: 500, category: '收入', note: '奖金', _date: null })
   })
 
   // —— B1 回归补充：餐饮类目词无单位也应记（修复"午饭38"不记）——
   test('正常：午饭38（无单位）→ -38 餐饮（类目词即消费意图）', () => {
-    expect(parseExpense('午饭38')).toEqual({ amount: -38, category: '餐饮', note: '午饭' })
+    expect(parseExpense('午饭38')).toEqual({ amount: -38, category: '餐饮', note: '午饭', _date: null })
   })
   test('正常：早餐25 → -25 餐饮', () => {
-    expect(parseExpense('早餐25')).toEqual({ amount: -25, category: '餐饮', note: '早餐' })
+    expect(parseExpense('早餐25')).toEqual({ amount: -25, category: '餐饮', note: '早餐', _date: null })
   })
   test('正常：晚饭60块 → -60 餐饮（类目词+单位）', () => {
-    expect(parseExpense('晚饭60块')).toEqual({ amount: -60, category: '餐饮', note: '晚饭' })
+    expect(parseExpense('晚饭60块')).toEqual({ amount: -60, category: '餐饮', note: '晚饭', _date: null })
   })
   // —— B1 回归补充（续）：收入类词无单位也应记（修复"发工资100"不记）——
   test('正常：发工资100（无单位）→ +100 收入', () => {
-    expect(parseExpense('发工资100')).toEqual({ amount: 100, category: '收入', note: '发工资' })
+    expect(parseExpense('发工资100')).toEqual({ amount: 100, category: '收入', note: '发工资', _date: null })
   })
   test('正常：工资100 → +100 收入', () => {
-    expect(parseExpense('工资100')).toEqual({ amount: 100, category: '收入', note: '工资' })
+    expect(parseExpense('工资100')).toEqual({ amount: 100, category: '收入', note: '工资', _date: null })
   })
   test('正常：奖金500（无单位）→ +500 收入（覆盖 B1 保守设计的例外）', () => {
     // 注：此前"奖金500"无单位被 B1 保守设计判 null，但"奖金"是明确收入词，应记。
     // 收入类词前缀模式已放开（与餐饮类目词同理），仅"第N名奖金"这类仍不记。
-    expect(parseExpense('奖金500')).toEqual({ amount: 500, category: '收入', note: '奖金' })
+    expect(parseExpense('奖金500')).toEqual({ amount: 500, category: '收入', note: '奖金', _date: null })
   })
   test('正常：分红2000 → +2000 收入', () => {
-    expect(parseExpense('分红2000')).toEqual({ amount: 2000, category: '收入', note: '分红' })
+    expect(parseExpense('分红2000')).toEqual({ amount: 2000, category: '收入', note: '分红', _date: null })
   })
   test('回归：仍不破坏 B1 防护（第3名奖金/墙高3块砖 仍 null）', () => {
     expect(parseExpense('第3名奖金')).toBeNull()

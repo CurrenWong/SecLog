@@ -112,10 +112,22 @@ describe('parseUndo 撤回意图识别（仅明确删除动作）', () => {
     expect(parseUndo('删除这笔')).toBe(true)
     expect(parseUndo('取消记录')).toBe(true)
   })
-  test('"错了/不对"不再命中（交给模型判 correct）', () => {
-    expect(parseUndo('想起来错了')).toBe(false)
+  test('明确"记错了/弄错了/搞错了"应命中（用户就是想撤销）', () => {
+    // UNDO_RE 扩展：记错了/弄错了/搞错了/"刚才那笔"+"刚刚那笔"
+    // 用户的「刚才那笔记错了」语义就是撤回（删除），不是 correct（X 不是 Y 是 Z）
+    expect(parseUndo('记错了')).toBe(true)
+    expect(parseUndo('弄错了')).toBe(true)
+    expect(parseUndo('搞错了')).toBe(true)
+    expect(parseUndo('算错了')).toBe(true)
+    expect(parseUndo('刚才那笔记错了')).toBe(true)
+    expect(parseUndo('刚刚那笔不对')).toBe(true)
+  })
+  test('纯"错了/不对"仍不命中（避免误伤闲聊/反驳，交给模型判 correct）', () => {
+    // "我理解错了""你不对"是闲聊/反驳，不当撤回
+    expect(parseUndo('错了')).toBe(false)
+    expect(parseUndo('不对')).toBe(false)
     expect(parseUndo('记的不对')).toBe(false)
-    expect(parseUndo('搞错了')).toBe(false)
+    expect(parseUndo('想起来错了')).toBe(false)
   })
   test('非撤回意图不命中', () => {
     expect(parseUndo('午饭花了38')).toBe(false)

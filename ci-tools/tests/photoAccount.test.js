@@ -161,4 +161,78 @@ describe('A2 拍照记账：onPhotoAccount → OCR → 确认 → 记账', () =>
     expect(uploadFileMock).not.toHaveBeenCalled()
     expect(callFunctionMock).not.toHaveBeenCalled()
   })
+
+  // —— 真实场景：支付宝 APP 账单详情页 UI 截图 ——
+  // fixture: ci-tools/fixtures/alipay_bill_detail.jpg
+  // 期望 OCR 返回：amount=76.80（不是 -76.80，前端取 Math.abs），merchant="保利国际影城上海唐镇店"，
+  // category="娱乐"（不是"其他"），date="2026-07-31"
+  // 回归目标：修 prompt 后能正确识别支付 APP UI 截图（非小票）
+  test('支付宝账单详情页 UI 截图 → 弹窗金额/类别/商家正确（回归）', async () => {
+    chooseMediaMock.mockImplementation(({ success }) =>
+      success({ tempFiles: [{ tempFilePath: 'wxfile://alipay_bill_detail.jpg', size: 310438 }] })
+    )
+    uploadFileMock.mockResolvedValue({ fileID: 'cloud://seclog/ocr_tmp/alipay_bill_detail.jpg' })
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'ocr') {
+        // 模拟新 prompt + hunyuan-2.0-instruct 对支付宝 UI 截图的识别结果
+        return Promise.resolve({
+          result: {
+            success: true,
+            amount: 76.80,
+            merchant: '保利国际影城上海唐镇店',
+            category: '娱乐',
+            date: '2026-07-31',
+          },
+        })
+      }
+      return Promise.resolve({ result: { success: false } })
+    })
+
+    const inst = makeInst()
+    await inst.onPhotoAccount()
+    await sleep()
+
+    // 上传 fileID 正确
+    expect(uploadFileMock).toHaveBeenCalledTimes(1)
+    const ocrCall = callFunctionMock.mock.calls.find((c) => c[0].data.action === 'ocr')
+    expect(ocrCall[0].data.payload.imageUrl).toBe('cloud://seclog/ocr_tmp/alipay_bill_detail.jpg')
+
+    // 弹窗出现 + 字段正确
+    expect(inst.data.showOcrModal).toBe(true)
+    expect(inst.data.ocrResult.amount).toBe('76.8') // 数字 76.80 序列化为字符串
+    expect(inst.data.ocrResult.category).toBe('娱乐')
+    expect(inst.data.ocrResult.merchant).toBe('保利国际影城上海唐镇店')
+    expect(inst.data.ocrResult.date).toBe('2026-07-31')
+
+    // 真图 fixture 必须存在于仓库（防止被误删）
+    const fs = require('fs')
+    const path = require('path')
+    const fixture = path.resolve(__dirname, '../fixtures/alipay_bill_detail.jpg')
+    expect(fs.existsSync(fixture)).toBe(true)
+  })
+
+  // 负样本：OCR 把支付宝 UI 截图的"5积分"或"0.5元话费券"误当成金额
+  test('支付宝详情页 OCR 返回错误金额（如被 0.5 元话费券干扰）→ 前端不修正，但 add 用 OCR 值', async () => {
+    // 这里测的是「即使 OCR 抽错，前端弹窗仍展示 OCR 值」——错误修正靠用户在弹窗里改
+    // 防止回归：未来如果有人加 "智能修正" 逻辑，要保证不丢 OCR 原始值
+    callFunctionMock.mockImplementation(({ name, data }) => {
+      if (name === 'miaojiRecord' && data.action === 'ocr') {
+        return Promise.resolve({
+          result: { success: true, amount: 0.5, merchant: '支付宝', category: '其他', date: '2026-07-31' },
+        })
+      }
+      if (name === 'miaojiRecord' && data.action === 'add') {
+        return Promise.resolve({ result: { success: true } })
+      }
+      return Promise.resolve({ result: { success: false } })
+    })
+    const inst = makeInst()
+    await inst.onPhotoAccount()
+    await sleep()
+
+    expect(inst.data.ocrResult.amount).toBe('0.5')
+    await inst.onOcrConfirm()
+    const addCall = callFunctionMock.mock.calls.find((c) => c[0].data.action === 'add')
+    expect(addCall[0].data.payload.amount).toBe(0.5) // 错误的 OCR 值原样落库——这是用户改之前的快照
+  })
 })

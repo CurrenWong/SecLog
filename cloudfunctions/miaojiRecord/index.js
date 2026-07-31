@@ -14,6 +14,7 @@ const tcbApp = tcb.init({ env: 'seclog-d1g8no5pc45e643aa' })
 const db = cloud.database()
 const _ = db.command
 const COLLECTION = 'miaoji_records'
+const { parseOcrResponse } = require('./parseOcr')
 
 // 小程序端调用时 openid 一定有；非微信上下文直接调用（如测试）时为 undefined。
 // 为空时返回全部数据（测试/管理场景），不过滤以免 where({}) 报错。
@@ -27,11 +28,30 @@ function ownerQuery() {
 // 注意：wx-server-sdk 无 cloud.ai()；AI 能力只在 @cloudbase/node-sdk >= 3.16.0 提供。
 async function extractFromImage(imageUrl) {
   const prompt = [
-    '你是一个小票识别助手。请仔细识别这张消费凭证（小票/发票/支付截图）。',
-    '提取以下字段并以 JSON 返回（不要任何额外解释、不要代码块包裹）：',
+    '你是一个消费凭证识别助手。识别用户上传的消费图片（小票/发票/支付宝/微信账单详情页/银行 APP 交易截图等），提取记账需要的字段。',
+    '',
+    '⚠️ 关键识别规则（按重要性排序）：',
+    '1. 金额（amount）：页面里【最大、最显眼、居中显示的数字】，通常带 ¥ 符号或负号（-）。',
+    '   - 忽略：时间里的数字（如 20:01:23）、订单号/交易号、积分（5积分）、抵扣券金额（0.5元话费券）、状态文字（交易成功）。',
+    '   - 若是支付宝/微信 APP 的「账单详情」界面，金额就是顶部大字号、带「-」号的数字（如 -76.80 → 76.80）。',
+    '   - 若是小票/发票，找「合计/应付/总计/实付/金额」旁边的数字，不要拿「单价/数量」。',
+    '2. 商家（merchant）：从「商品说明」「收款方」「商户名称」「商家」等标签旁的字段提取，',
+    '   - 不要拿界面顶部的页面标题（如「账单详情」「交易记录」）。',
+    '   - 若是小票，取抬头店名。',
+    '   - 若是支付宝详情，取「商品说明」字段（如「蜘蛛侠：薪新之日保利国际影城上海唐镇店」可取「保利国际影城上海唐镇店」或保留完整）。',
+    '3. 类别（category）：从以下枚举选最接近的一个：餐饮、交通、购物、居家、医疗、娱乐、教育、其他。',
+    '   - 电影院/演唱会/景点/游戏 → 娱乐',
+    '   - 餐饮店/外卖/咖啡 → 餐饮',
+    '   - 加油站/打车/公交 → 交通',
+    '   - 若 APP 自带分类（如「文化休闲」「美食」），以其为参考但不绝对。',
+    '4. 日期（date）：优先用「支付时间/交易时间/消费时间」字段（YYYY-MM-DD）。',
+    '   - 不要用界面顶部的手机状态栏时间（20:10）。',
+    '   - 无法识别时返回 ""。',
+    '',
+    '以 JSON 返回（不要任何额外解释、不要代码块包裹）：',
     '1. amount: 总金额（数字，如 45.5）。若无法确认金额返回 null。',
     '2. merchant: 商家/收款方名称（字符串）。无法识别返回 ""。',
-    '3. category: 消费类别，从以下枚举选一个：餐饮、交通、购物、居家、医疗、娱乐、教育、其他。',
+    '3. category: 消费类别，从枚举选一个（餐饮/交通/购物/居家/医疗/娱乐/教育/其他）。',
     '4. date: 消费日期（YYYY-MM-DD），无法识别返回 ""。',
     '只输出一个 JSON 对象，例如：{"amount":45.5,"merchant":"全家便利店","category":"购物","date":"2026-07-15"}',
   ].join('\n')
@@ -59,30 +79,18 @@ async function extractFromImage(imageUrl) {
     return { success: false, code: 'AI_EMPTY', message: '模型返回为空' }
   }
 
-  // 容错解析：去掉 ```json ``` 包裹、提取第一个 {..} 块
-  let jsonStr = String(content).trim()
-  const fence = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/i)
-  if (fence) jsonStr = fence[1].trim()
-  const brace = jsonStr.match(/\{[\s\S]*\}/)
-  if (brace) jsonStr = brace[0]
-
-  let parsed
-  try {
-    parsed = JSON.parse(jsonStr)
-  } catch (e) {
-    return { success: false, code: 'AI_PARSE_ERROR', message: '模型返回无法解析为 JSON', raw: String(content).slice(0, 200) }
+  // 容错解析 + 字段归一化（详见 ./parseOcr.js，单测覆盖）
+  const parsed2 = parseOcrResponse(content)
+  if (!parsed2.ok) {
+    return { success: false, code: parsed2.code, message: parsed2.message, raw: parsed2.raw }
   }
-
-  const amount = typeof parsed.amount === 'number' ? parsed.amount : null
-  const categoryEnum = ['餐饮', '交通', '购物', '居家', '医疗', '娱乐', '教育', '其他']
-  const category = categoryEnum.includes(parsed.category) ? parsed.category : '其他'
 
   return {
     success: true,
-    amount,
-    merchant: typeof parsed.merchant === 'string' ? parsed.merchant : '',
-    category,
-    date: typeof parsed.date === 'string' ? parsed.date : '',
+    amount: parsed2.amount,
+    merchant: parsed2.merchant,
+    category: parsed2.category,
+    date: parsed2.date,
   }
 }
 

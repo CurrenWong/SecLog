@@ -134,7 +134,7 @@ function parseExpense(text) {
     const raw = extractAmount(text)
     if (raw !== null && !isNaN(raw)) {
       const amount = isIncome ? Math.abs(raw) : -Math.abs(raw)
-      if (isIncome) return { amount, category: '收入', note: stripAmount(text) }
+      if (isIncome) return { amount, category: '收入', note: stripAmount(text), _date: parseDateHint(text) }
       let category = '其他'
       const lower = text.toLowerCase()
       for (const item of CATEGORY_MAP) {
