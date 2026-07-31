@@ -336,3 +336,156 @@ test('parseQuery "餐饮花了多少" → category（不是 recent）', () => {
   const r = parseQuery('餐饮花了多少')
   assert.equal(r.type, 'category')
 })
+// ============================================================
+// Fix #2: 中文数字金额
+// ============================================================
+test('中文数字"午饭五十" → 餐饮 -50', () => {
+  const r = parseExpense('午饭五十')
+  assert.equal(r.amount, -50)
+  assert.equal(r.category, '餐饮')
+})
+
+test('中文数字"午饭五十块" → 餐饮 -50', () => {
+  const r = parseExpense('午饭五十块')
+  assert.equal(r.amount, -50)
+  assert.equal(r.category, '餐饮')
+})
+
+test('中文数字"午饭三十多" → 餐饮 -30', () => {
+  const r = parseExpense('午饭三十多')
+  assert.equal(r.amount, -30)
+  assert.equal(r.category, '餐饮')
+})
+
+test('中文数字"打车二十五" → 交通 -25', () => {
+  const r = parseExpense('打车二十五')
+  assert.equal(r.amount, -25)
+  assert.equal(r.category, '交通')
+})
+
+test('中文数字"午饭一百五" → 餐饮 -150', () => {
+  const r = parseExpense('午饭一百五')
+  assert.equal(r.amount, -150)
+})
+
+test('中文数字"午饭两百" → 餐饮 -200', () => {
+  const r = parseExpense('午饭两百')
+  assert.equal(r.amount, -200)
+})
+
+test('中文数字"午饭十五六块" → 取较长段 十六 -16', () => {
+  const r = parseExpense('午饭十五六块')
+  assert.equal(r.amount, -16)
+})
+
+// ============================================================
+// Fix #3: 英文/品牌别名 → 餐饮
+// ============================================================
+test('starbucks 50 → 餐饮 -50', () => {
+  const r = parseExpense('starbucks 50')
+  assert.equal(r.amount, -50)
+  assert.equal(r.category, '餐饮')
+})
+
+test('KFC 88 → 餐饮 -88', () => {
+  const r = parseExpense('KFC 88')
+  assert.equal(r.amount, -88)
+  assert.equal(r.category, '餐饮')
+})
+
+test('麦当劳 35 → 餐饮 -35', () => {
+  const r = parseExpense('麦当劳 35')
+  assert.equal(r.amount, -35)
+  assert.equal(r.category, '餐饮')
+})
+
+test('星巴克 45 → 餐饮 -45', () => {
+  const r = parseExpense('星巴克 45')
+  assert.equal(r.amount, -45)
+  assert.equal(r.category, '餐饮')
+})
+
+test('瑞幸 28 → 餐饮 -28', () => {
+  const r = parseExpense('瑞幸 28')
+  assert.equal(r.amount, -28)
+  assert.equal(r.category, '餐饮')
+})
+
+// ============================================================
+// Fix #4: 撤回关键词扩展
+// ============================================================
+const { parseUndo } = require('../parseExpense')
+
+test('parseUndo "记错了" → true', () => {
+  assert.equal(parseUndo('记错了'), true)
+})
+
+test('parseUndo "弄错了" → true', () => {
+  assert.equal(parseUndo('弄错了'), true)
+})
+
+test('parseUndo "刚才那笔不对" → true', () => {
+  assert.equal(parseUndo('刚才那笔不对'), true)
+})
+
+test('parseUndo "帮我撤了" → true', () => {
+  assert.equal(parseUndo('帮我撤了'), true)
+})
+
+test('parseUndo "今天天气不错" → false', () => {
+  assert.equal(parseUndo('今天天气不错'), false)
+})
+
+// ============================================================
+// Fix #1: 过去日期识别
+// ============================================================
+const { parseDateHint } = require('../parseExpense')
+
+test('parseDateHint "昨天" → 有效日期', () => {
+  const r = parseDateHint('昨天')
+  assert.match(r, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseDateHint "前天" → 有效日期', () => {
+  const r = parseDateHint('前天')
+  assert.match(r, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseDateHint "大前天" → 有效日期', () => {
+  const r = parseDateHint('大前天')
+  assert.match(r, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseDateHint "3天前" → 有效日期', () => {
+  const r = parseDateHint('3天前')
+  assert.match(r, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseDateHint "上个月" → 有效日期（边界修复：原返回新月首日）', () => {
+  const r = parseDateHint('上个月')
+  assert.match(r, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseDateHint "午饭38" → null（无日期提示）', () => {
+  assert.equal(parseDateHint('午饭38'), null)
+})
+
+// 集成测试：date 字段挂载
+test('parseExpense "昨天午饭38" → 含 _date 字段', () => {
+  const r = parseExpense('昨天午饭38')
+  assert.equal(r.amount, -38)
+  assert.equal(r.category, '餐饮')
+  assert.match(r._date, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseExpense "前天打车25" → 含 _date', () => {
+  const r = parseExpense('前天打车25')
+  assert.equal(r.amount, -25)
+  assert.equal(r.category, '交通')
+  assert.match(r._date, /^\d{4}-\d{2}-\d{2}$/)
+})
+
+test('parseExpense "午饭38"（无日期）→ _date null', () => {
+  const r = parseExpense('午饭38')
+  assert.equal(r._date, null)
+})

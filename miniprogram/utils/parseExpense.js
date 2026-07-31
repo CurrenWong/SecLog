@@ -15,7 +15,10 @@ const INCOME_RE = /(收入|工资|赚|收|到账|奖金|报销|分红)/i
 // 新增关键词时只需改这里，AMOUNT_PATTERNS、CATEGORY_MAP、INTENT_KEYS 全部自动派生。
 // ============================================================
 const CATEGORY_KEYWORDS = {
-  餐饮: ['午饭', '午餐', '早饭', '早餐', '晚饭', '晚餐', '饭', '吃', '餐', '喝', '奶茶', '咖啡', '餐厅', '火锅', '小吃', '快餐', '外卖'],
+  餐饮: ['午饭', '午餐', '早饭', '早餐', '晚饭', '晚餐', '饭', '吃', '餐', '喝', '奶茶', '咖啡', '餐厅', '火锅', '小吃', '快餐', '外卖',
+        // Fix #3: 英文/品牌别名
+        'starbucks', '星巴克', 'kfc', '肯德基', 'mcdonald', '麦当劳', '麦门', 'burgerking', '汉堡王', '赛百味', 'pizza', '必胜客', '瑞幸', 'luckin', '蜜雪', '喜茶', '奈雪', '一点点', 'coco',
+        ],
   交通: ['打车', '地铁', '公交', '车', '油', '停车', '高铁', '火车', '飞机', '机票', '滴滴', 'taxi', 'bus', 'subway', 'metro', 'uber', 'lyft', 'tram', 'train', 'flight', '顺风车', '拼车', '自驾', '过路费', '加油'],
   购物: ['买', '购', '衣服', '鞋', '包', '数码', '手机', '电脑', '淘宝', '京东', '超市', '网购', '快递'],
   居家: ['房租', '水电', '物业', '家居', '家具', '日用品', '生活用品', '理发', '美容'],
@@ -46,6 +49,8 @@ const AMOUNT_PATTERNS = [
   new RegExp(`(?:${ACTION_KEYWORDS.join('|')})[^0-9\\-]*?(-?\\d+(?:\\.\\d+)?)\\s*(?:元|块|刀|rmb)?`, 'i'),
   // 交通/购物等类别词 + 数字/单位（补漏：打车/加油/网购等带单位）
   new RegExp(`(?:${[...CATEGORY_KEYWORDS.交通, ...CATEGORY_KEYWORDS.购物, ...CATEGORY_KEYWORDS.居家, ...CATEGORY_KEYWORDS.娱乐, ...CATEGORY_KEYWORDS.医疗, ...CATEGORY_KEYWORDS.教育].join('|')})[^0-9\\-]*?(-?\\d+(?:\\.\\d+)?)\\s*(?:元|块|刀|rmb)?`, 'i'),
+  // Fix #2: 中文数字 + 单位
+  new RegExp(`(?:${Object.values(CATEGORY_KEYWORDS).flat().concat(ACTION_KEYWORDS).join('|')})[^0-9\\u4e00-\\u9fff\\-]*?([零〇一二两三四五六七八九壹贰叁肆伍陆柒捌玖十拾百佰千]+)\\s*(?:元|块|刀|rmb)?`, 'i'),
   // 纯数字 + 单位（"38元""100块"）
   /(-?\d+(?:\.\d+)?)\s*(?:元|块|刀|rmb)/i,
 ]
@@ -76,7 +81,16 @@ function hasIntent(text) {
 function extractAmount(text) {
   for (const p of AMOUNT_PATTERNS) {
     const m = text.match(p)
-    if (m) return parseFloat(m[1])
+    if (m) {
+      const raw = m[1]
+      // Fix #2: 中文数字（五十/三十/两百五 等）parseFloat 得 NaN，用 parseChineseAmount 兜底
+      if (/[零〇一二两三四五六七八九壹贰叁肆伍陆柒捌玖十拾百佰千]/.test(raw)) {
+        const cn = parseChineseAmount(raw)
+        if (cn !== null) return cn
+        continue
+      }
+      return parseFloat(raw)
+    }
   }
   return null
 }
@@ -104,7 +118,7 @@ function matchesExpenseFallback(text) {
 // 撤回意图识别：用户想【删除】刚才记的一笔。确定性正则（不调模型，即时）。
 // 只认明确的"删除"动作词；"错了/不对/改"等交给模型判断是「更正」还是「无意图」。
 // 命中返回 true；非撤回意图返回 false。
-const UNDO_RE = /(撤回|撤销|删掉|删除|取消记录|不要记了|别记了|退了重记)/i
+const UNDO_RE = /(撤回|撤销|删掉|删除|取消记录|不要记了|别记了|退了重记|记错了|弄错了|搞错了|算错了|刚才那笔|刚刚那笔|上一笔不对|取消吧|撤回吧|帮我撤了)/i
 function parseUndo(text) {
   if (!text) return false
   return UNDO_RE.test(text)
@@ -129,7 +143,7 @@ function parseExpense(text) {
           break
         }
       }
-      return { amount, category, note: stripAmount(text) }
+      return { amount, category, note: stripAmount(text), _date: parseDateHint(text) }
     }
   }
 
@@ -141,7 +155,7 @@ function parseExpense(text) {
     const m = text.match(/(\d+(?:\.\d+)?)\s*$/i)
     if (m) {
       const amount = -Math.abs(parseFloat(m[1]))
-      return { amount, category: '其他', note: stripAmount(text) }
+      return { amount, category: '其他', note: stripAmount(text), _date: parseDateHint(text) }
     }
   }
 
@@ -387,4 +401,118 @@ function parseQuery(text, ctx) {
   return { type: 'month', month: 'this' }
 }
 
-module.exports = { parseExpense, parseExpenses, parseUndo, parseQuery }
+// ============================================================
+// Fix #2: 中文数字解析函数
+// ============================================================
+const CN_DIGIT = { 零:0, 〇:0, 一:1, 壹:1, 二:2, 贰:2, 两:2, 三:3, 叁:3, 四:4, 肆:4,
+                   五:5, 伍:5, 六:6, 陆:6, 七:7, 柒:7, 八:8, 捌:8, 九:9, 玖:9 }
+
+function chineseStrToNum(s) {
+  let result = 0
+  let curDigit = 0
+  let hasUnit = false
+  let lastUnit = null // '十' | '百' | '千' | null（用于处理 "一百五" 这种口语）
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (CN_DIGIT[c] !== undefined) {
+      curDigit = CN_DIGIT[c]
+    } else if (c === '十' || c === '拾') {
+      if (curDigit === 0 && i === 0) curDigit = 1
+      result += curDigit * 10
+      curDigit = 0
+      hasUnit = true
+      lastUnit = '十'
+    } else if (c === '百' || c === '佰') {
+      result += (curDigit || 1) * 100
+      curDigit = 0
+      hasUnit = true
+      lastUnit = '百'
+    } else if (c === '千') {
+      result += (curDigit || 1) * 1000
+      curDigit = 0
+      hasUnit = true
+      lastUnit = '千'
+    }
+  }
+  if (curDigit > 0) {
+    // "一百五"（百后无十 + 数字）→ 一百+五十 = 150；"一百零五" → 105
+    // 启发式：百/千 之后无十 + 跟着数字 → 视为十位（×10）
+    if ((lastUnit === '百' || lastUnit === '千') && !s.includes('十') && !s.includes('拾')) {
+      result += curDigit * 10
+    } else {
+      result += curDigit
+    }
+  }
+  return result > 0 || hasUnit ? result : null
+}
+
+function parseChineseAmount(text) {
+  if (!text) return null
+  const segs = text.match(/[零〇一二两三四五六七八九壹贰叁肆伍陆柒捌玖十拾百佰千]+(?:多|几|来)?/g)
+  if (!segs) return null
+  let best = null
+  for (const seg of segs) {
+    const clean = seg.replace(/(多|几|来)$/, '')
+    if (!clean) continue
+    const v = chineseStrToNum(clean)
+    if (v !== null && (best === null || clean.length > best.len)) best = { v, len: clean.length }
+  }
+  return best ? best.v : null
+}
+
+// ============================================================
+// Fix #1: 过去日期识别（返回 YYYY-MM-DD 或 null）
+// ============================================================
+function pad2(n) { return String(n).padStart(2, '0') }
+function fmtDate(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+function parseDateHint(text) {
+  if (!text) return null
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (/大前天/.test(text)) {
+    const d = new Date(today); d.setDate(d.getDate() - 3); return fmtDate(d)
+  }
+  if (/前\s*天/.test(text) && !/昨天/.test(text)) {
+    const d = new Date(today); d.setDate(d.getDate() - 2); return fmtDate(d)
+  }
+  if (/昨\s*天/.test(text)) {
+    const d = new Date(today); d.setDate(d.getDate() - 1); return fmtDate(d)
+  }
+  const wkMap = { 一:1, 二:2, 三:3, 四:4, 五:5, 六:6, 日:0, 天:0, 末:0 }
+  const wkMatch = text.match(/(上\s*周|本\s*周|这\s*周)?\s*周\s*([一二三四五六日天末])/)
+  if (wkMatch) {
+    const target = wkMap[wkMatch[2]]
+    if (target !== undefined) {
+      const curDow = today.getDay()
+      let diff = (curDow - target + 7) % 7
+      if (diff === 0) diff = 7
+      if (/上\s*周/.test(wkMatch[1] || '')) diff += 7
+      const d = new Date(today); d.setDate(d.getDate() - diff); return fmtDate(d)
+    }
+  }
+  const dayAgo = text.match(/(\d+)\s*天\s*前/)
+  if (dayAgo) {
+    const n = parseInt(dayAgo[1], 10)
+    const d = new Date(today); d.setDate(d.getDate() - n); return fmtDate(d)
+  }
+  if (/上\s*(上\s*个\s*月|个\s*月|月)/.test(text)) {
+    // 边界：1月-1=0月→去年12月，OK；但 getDate() 可能超出新月天数（如7/31 - 1月 → 6/31 不存在 → Date 自动滚到 7/1）
+    // 修复：用 new Date(year, month+1, 0) 取新月最后一天，clamp 一下
+    const prevYear = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear()
+    const prevMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1
+    const lastDayOfPrevMonth = new Date(prevYear, prevMonth + 1, 0).getDate()
+    const day = Math.min(today.getDate(), lastDayOfPrevMonth)
+    return fmtDate(new Date(prevYear, prevMonth, day))
+  }
+  const cnDayMap = { 一:1, 两:2, 二:2, 三:3, 四:4, 五:5, 六:6, 七:7, 八:8, 九:9, 十:10 }
+  const cnDay = text.match(/([零〇一二两三四五六七八九十])\s*天\s*前/)
+  if (cnDay && cnDayMap[cnDay[1]]) {
+    const d = new Date(today); d.setDate(d.getDate() - cnDayMap[cnDay[1]]); return fmtDate(d)
+  }
+  return null
+}
+
+module.exports = { parseExpense, parseExpenses, parseUndo, parseQuery, parseDateHint, parseChineseAmount }
