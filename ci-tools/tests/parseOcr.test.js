@@ -9,15 +9,15 @@ const { parseOcrResponse, extractJsonString, CATEGORY_ENUM } = require('../../cl
 
 // 回归防护：视觉 OCR 必须用真多模态模型，禁止用纯文本模型（hunyuan-2.0-instruct=hy3）。
 // 2026-08-01 实测：用 hunyuan-2.0-instruct 做视觉 OCR 时图片被忽略，模型幻觉出随机错的
-// 商家/金额/日期（如返回"麦当劳/36.5/2024-05-20"）。改用 deepseek-v4-pro（CloudBase 官方
-// recipe 验证支持多模态，cloudbase 组实际能调通；qwen3.5-plus 在同组下报 400）。
+// 商家/金额/日期（如返回"麦当劳/36.5/2024-05-20"）。改用 qwen3.5-plus（原生多模态，
+// 已在 cloudbase 组启用 + TokenHub 开通额度）。
 describe('视觉 OCR 模型配置守卫', () => {
   const indexSrc = fs.readFileSync(
     path.resolve(__dirname, '../../cloudfunctions/miaojiRecord/index.js'),
     'utf8'
   )
-  test('extractFromImage 使用真多模态模型 deepseek-v4-pro（非纯文本 hunyuan）', () => {
-    expect(indexSrc).toMatch(/deepseek-v4-pro/)
+  test('extractFromImage 使用真多模态模型 qwen3.5-plus（非纯文本 hunyuan）', () => {
+    expect(indexSrc).toMatch(/qwen3\.5-plus/)
     // 禁止出现纯文本视觉模型（会幻觉）
     expect(indexSrc).not.toMatch(/hunyuan-2\.0-instruct[^'"]*'\)?\s*[,)]/)
     expect(indexSrc).not.toContain("'hunyuan-exp'")

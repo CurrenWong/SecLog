@@ -161,38 +161,40 @@ const q = db.collection(COLLECTION).where(cond)
 所以图片被默默丢弃，模型在**没看到图**的情况下凭 prompt 幻觉出符合 JSON 结构的随机值。
 （之前 gotcha #10 / MEMORY.md 误记成"hunyuan 可做视觉"，2026-08-01 实测纠正。）
 
-**修复**：视觉 OCR 改用真多模态模型 `deepseek-v4-pro`（CloudBase 官方 recipe 验证支持多模态）：
-- `cloudfunctions/miaojiRecord/index.js`：`ai.createModel('cloudbase')` + `model:'deepseek-v4-pro'`
+**修复**：视觉 OCR 改用真多模态模型 `qwen3.5-plus`（CloudBase 官方 multimodal 文档示例）：
+- `cloudfunctions/miaojiRecord/index.js`：`ai.createModel('cloudbase')` + `model:'qwen3.5-plus'`
 - 多模态 content 数组：image 在前、text 在后（CloudBase 官方 recipe 推荐写法）
 - `ocr` action 增加 base64 data-URL 直传分支（以 `data:image` 开头时跳过 `getTempFileURL`）
 - 部署用 CloudBase MCP `manageFunctions(updateFunctionCode)`
 
 **关键排查（2026-08-01）**：
-- **真凶不是 SDK 路由 / 端点 / TokenHub，而是套餐限制**：
-  `UpdateAIModel` 把 `glm-5v-turbo` 加进 `cloudbase` 组时**报"当前环境的套餐不支持，请升级到标准版及以上套餐"**。
-  `seclog-d1g8no5pc45e643aa` 是**个人版（baas_personal）**，不支持 `glm-5v-turbo` 这种高级多模态模型。
-  所以官方文档示例（cloudbase group + glm-5v-turbo + image_url）在个人版 env 里**跑不通**。
-- 个人版 env 可用的多模态模型只有 `deepseek-v4-pro`（已开通）。但**调用成功但模型返回全空**（amount: null,
-  merchant: ""），说明模型接收到了请求但**没拿到图**（可能是 cloud:// 临时 URL / 公网 CDN URL 模型访问不到，
-  需要测试 base64 data-URL 走真正 inline 通道）。
-- **不跑通也不入库脏数据**：`extractFromImage` 包了 try/catch，调用失败返回 `AI_CALL_ERROR`（非 success），
-  前端拍照按钮调用时会显示"识别失败，请手动记账"——这是 gotcha 修复的核心收益。
-  早先用 `hunyuan-2.0-instruct`（纯文本模型）时，模型"假装成功"+ 返回幻觉 JSON + `success:true` 蒙混入库；
-  现在不管调哪个模型，调用失败/识别失败都会老实返回 AI_CALL_ERROR。
+- **API 调用成功，但模型看不到图**：
+  `qwen3.5-plus` + `cloudbase` group + image_url 数组 + 真 fixture（已上传云存储、有公网 URL）—— 
+  API 返回 `success:true`，duration 6.5 秒（说明模型在推理），但模型回复"你没有上传图片"。
+  **结论：cloudbase group 路由下 content 数组里的 image_url 字段被忽略，模型无法看到图片。**
+  这与官方文档示例（cloudbase group + glm-5v-turbo + image_url）描述不一致，可能是 SDK/路由实现差异。
+- **个人版套餐不支持 glm-5v-turbo**：
+  `UpdateAIModel` 把 `glm-5v-turbo` 加进 `cloudbase` 组时报
+  "当前环境的套餐不支持，请升级到标准版及以上套餐"。
+  `seclog-d1g8no5pc45e643aa` 是个人版（baas_personal），高级多模态模型不让启用。
+  所以官方文档示例在个人版 env 里跑不通。
+- **qwen3.5-plus 早期 400 → 后来 success**：开通 TokenHub 额度后 SDK 路由更新，
+  现在 API 调用成功（不再 400），只是模型收不到图。
 
 **更远方案**（如果未来需要稳定 OCR）：
 - **升级 CloudBase 套餐到标准版/企业版**：解锁 `glm-5v-turbo` 等高级多模态模型
 - **自建自定义模型组**：用 `CreateAIModel` 创建 `custom-dashscope` 或 `custom-hunyuan`，自己提供
-  BaseURL + APIKey，绕开 cloudbase 文本端点路由（需要第三方 APIKey）
-- **直连 DashScope**：在云函数里直接 axios 调用阿里云百炼 multimodal 端点，最干净
+  BaseURL + APIKey，绕开 cloudbase 文本端点路由（需要第三方 APIKey）—— **最干净的路径**
+- **直连 DashScope**：在云函数里直接 axios 调用阿里云百炼 multimodal 端点
 
-**为何最终选 `deepseek-v4-pro`**：
-- 个人版 env 唯一可调通的多模态模型（在 cloudbase 组已启用）
-- 同系列 `qwen3.5-plus` 在 cloudbase 组实测多模态 400（路由到文本端点，与 image_url 不兼容）
-- `qwen3.5-flash` 已启用但多模态 400（同理）
-- `glm-5v-turbo` 在个人版套餐下根本不让启用（UpdateAIModel 报"套餐不支持"）
-- 之前用 `hunyuan-2.0-instruct`（纯文本）时模型"假装成功"+ 返回幻觉 JSON + success:true 蒙混入库，
+**为何最终选 `qwen3.5-plus`**：
+- 通义千问原生多模态，TokenHub 已开通额度，cloudbase 组可调用
+- `hunyuan-2.0-instruct`（纯文本）会让模型"假装成功"+ 返回幻觉 JSON + success:true 蒙混入库，
   导致脏数据
+
+**不跑通也不入库脏数据**：`extractFromImage` 包了 try/catch，调用失败或识别失败
+返回 `AI_CALL_ERROR`（非 success），前端拍照按钮调用时会显示"识别失败，请手动记账"——这是
+gotcha 修复的核心收益：早先用纯文本模型时模型假装成功蒙混入库，现在老实返回错误码。
 
 **实测验证方法**（关键！不能只靠 mock）：
 - 用真实 fixture `ci-tools/fixtures/alipay_bill_detail.jpg` 上传云存储，invoke `ocr` action：
@@ -204,9 +206,9 @@ const q = db.collection(COLLECTION).where(cond)
     --params '{"action":"ocr","payload":{"imageUrl":"cloud://seclog-d1g8no5pc45e643aa/ocr_tmp/alipay_bill_detail.jpg"}}'
   ```
 - **守卫测试**：`ci-tools/tests/parseOcr.test.js` 的「视觉 OCR 模型配置守卫」会断言
-  `index.js` 含 `deepseek-v4-pro` 且不含 `hunyuan-exp` / `hunyuan-2.0-instruct`，防止有人改回纯文本模型。
+  `index.js` 含 `qwen3.5-plus` 且不含 `hunyuan-exp` / `hunyuan-2.0-instruct`，防止有人改回纯文本模型。
 
-**关联**：MEMORY.md gotcha #10（修正为 deepseek-v4-pro）、gotcha #12（UpdateAIModel≠TokenHub 开通、
+**关联**：MEMORY.md gotcha #10（修正为 qwen3.5-plus）、gotcha #12（UpdateAIModel≠TokenHub 开通、
   套餐限制、个人版不支持 glm-5v-turbo）、gotcha #9（改云函数必须重传）。
 
 ---

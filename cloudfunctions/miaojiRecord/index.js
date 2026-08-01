@@ -62,16 +62,14 @@ async function extractFromImage(imageUrl) {
   }
   // ⚠️ 视觉 OCR 必须用真正的多模态模型。hunyuan-2.0-instruct(=hy3) 是【纯文本】模型，
   // 传图会被忽略/报错，导致模型幻觉出错误 JSON（实测返回随机错的商家/金额/日期）。
-  // 改用 deepseek-v4-pro（CloudBase 官方 recipe 验证支持多模态 + image_url + cloudbase group）：
-  // - 官方文档：https://docs.cloudbase.net/recipes/add-multimodal-image-cloudbase-deepseek-v4
-  // - content 数组顺序：image 在前、text 在后（recipe 推荐写法，避免模型把 text 当主任务图当附件忽略）
-  // - qwen3.5-plus 在 cloudbase 组实测报 400（多模态需走专门的 multimodal-generation 端点，
-  //   而 cloudbase group 把请求路由到了 chat completions 端点，参见 GOTCHA-2026-08-01-001）
+  // 改用 qwen3.5-plus（通义千问原生多模态模型，已在 cloudbase 组启用 + TokenHub 开通额度）：
+  // - content 数组顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
+  // - ocr action 增加 base64 data-URL 直传分支（以 `data:image` 开头时跳过 `getTempFileURL`）
   const model = ai.createModel('cloudbase')
   let res
   try {
     res = await model.generateText({
-      model: 'deepseek-v4-pro',
+      model: 'qwen3.5-plus',
       messages: [
         {
           role: 'user',
