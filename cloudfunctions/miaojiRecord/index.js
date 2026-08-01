@@ -60,19 +60,38 @@ async function extractFromImage(imageUrl) {
   if (!ai) {
     return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 @cloudbase/node-sdk 未初始化 AI 通道' }
   }
-  const model = ai.createModel('hunyuan-exp')
-  const res = await model.generateText({
-    model: 'hunyuan-2.0-instruct-20251111',
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: imageUrl } },
-        ],
-      },
-    ],
-  })
+  // ⚠️ 视觉 OCR 必须用真正的多模态模型。hunyuan-2.0-instruct(=hy3) 是【纯文本】模型，
+  // 传图会被忽略/报错，导致模型幻觉出错误 JSON（实测返回随机错的商家/金额/日期）。
+  // 改用 deepseek-v4-pro（CloudBase 官方 recipe 验证支持多模态 + image_url + cloudbase group）：
+  // - 官方文档：https://docs.cloudbase.net/recipes/add-multimodal-image-cloudbase-deepseek-v4
+  // - content 数组顺序：image 在前、text 在后（recipe 推荐写法，避免模型把 text 当主任务图当附件忽略）
+  // - qwen3.5-plus 在 cloudbase 组实测报 400（多模态需走专门的 multimodal-generation 端点，
+  //   而 cloudbase group 把请求路由到了 chat completions 端点，参见 GOTCHA-2026-08-01-001）
+  const model = ai.createModel('cloudbase')
+  let res
+  try {
+    res = await model.generateText({
+      model: 'deepseek-v4-pro',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: imageUrl } },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+    })
+  } catch (e) {
+    return {
+      success: false,
+      code: 'AI_CALL_ERROR',
+      message: String(e && e.message || e).slice(0, 500),
+      stack: String(e && e.stack || '').slice(0, 500),
+      status: e && e.status,
+      responseBody: e && e.response && e.response.body ? String(e.response.body).slice(0, 500) : undefined,
+    }
+  }
 
   const content = res && (res.text || (res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content))
   if (!content) {
@@ -338,7 +357,10 @@ exports.main = async (event, context) => {
         }
         // fileID 需换临时访问 URL（云存储临时链接有效期短，云函数内同步用）
         let realUrl = imageUrl
-        if (imageUrl.startsWith('cloud://') || imageUrl.startsWith('wxfile://')) {
+        // base64 data-URL 直传（本地测试/前端可直传，跳过 fileID 临时 URL 环节）
+        if (imageUrl.startsWith('data:image')) {
+          realUrl = imageUrl
+        } else if (imageUrl.startsWith('cloud://') || imageUrl.startsWith('wxfile://')) {
           try {
             const tmp = await cloud.getTempFileURL({ fileList: [imageUrl] })
             if (tmp.fileList && tmp.fileList[0] && tmp.fileList[0].tempFileURL) {
