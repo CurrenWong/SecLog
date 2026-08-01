@@ -42,6 +42,9 @@ Thumbs.db
 # QwenPaw Coding Mode 会话级 TODO 文件（不入版本库）
 *_TODO.md
 
+# Self-improvement: 项目本地 .learnings/（不入库，按 self-improving-agent skill 规则）
+.learnings/
+
 # ===== Python（备用）=====
 
 __pycache__/

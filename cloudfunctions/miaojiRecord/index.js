@@ -23,10 +23,54 @@ function ownerQuery() {
   return openid ? { openid } : null
 }
 
+// —— 图片引用 → 模型可用的 base64 data-URL ——
+// 调用方只传引用（cloud:// fileID 或 https:// URL），函数内部 fetch + 转 base64。
+// 这样 base64 不走调用链路（避免 401KB 原图 base64 字符串塞进 params 触发工具 / 网关限制）。
+// data:image/... 直传仅保留作为调试入口（前端 / 本地测试可直接贴 base64，生产别用）。
+async function fetchAsBase64DataUrl(ref) {
+  if (typeof ref !== 'string' || !ref) throw new Error('imageUrl 不能为空')
+
+  // 1) base64 data-URL：调试用，原样返回
+  if (ref.startsWith('data:image')) return ref
+
+  // 2) cloud:// / wxfile://：先换临时 https URL，再 fetch 转 base64
+  let httpsUrl = ref
+  if (ref.startsWith('cloud://') || ref.startsWith('wxfile://')) {
+    const tmp = await cloud.getTempFileURL({ fileList: [ref] })
+    if (!tmp.fileList || !tmp.fileList[0] || !tmp.fileList[0].tempFileURL) {
+      throw new Error('云存储 fileID 解析为临时 URL 失败')
+    }
+    httpsUrl = tmp.fileList[0].tempFileURL
+  }
+
+  // 3) https URL：fetch 二进制 + 转 base64
+  if (!/^https?:\/\//i.test(httpsUrl)) {
+    throw new Error(`imageUrl 协议不支持（需 cloud:// / https:// / data:image/）：${ref.slice(0, 80)}`)
+  }
+  const resp = await fetch(httpsUrl, { method: 'GET' })
+  if (!resp.ok) throw new Error(`fetch 图片失败 HTTP ${resp.status}`)
+  const ab = await resp.arrayBuffer()
+  const buf = Buffer.from(ab)
+  // content-type 探测：响应头 → 文件头 → 默认 jpeg
+  let ct = (resp.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+  if (!ct || !ct.startsWith('image/')) {
+    if (buf[0] === 0xff && buf[1] === 0xd8) ct = 'image/jpeg'
+    else if (buf[0] === 0x89 && buf[1] === 0x50) ct = 'image/png'
+    else if (buf[0] === 0x47 && buf[1] === 0x49) ct = 'image/gif'
+    else if (buf[0] === 0x52 && buf[1] === 0x49) ct = 'image/webp'
+    else ct = 'image/jpeg'
+  }
+  // 限流：超过 4MB 不让模型处理（401KB 原图已经是上限了）
+  if (buf.length > 4 * 1024 * 1024) {
+    throw new Error(`图片过大 ${(buf.length / 1024 / 1024).toFixed(2)}MB（>4MB），请压缩后再上传`)
+  }
+  return `data:${ct};base64,${buf.toString('base64')}`
+}
+
 // —— 拍照记账：调 CloudBase AI（@cloudbase/node-sdk app.ai() 通道）做多模态小票识别 ——
 // 用 @cloudbase/node-sdk 的 app.ai()（自动内网鉴权，不需要硬编码 key）。
 // 注意：wx-server-sdk 无 cloud.ai()；AI 能力只在 @cloudbase/node-sdk >= 3.16.0 提供。
-async function extractFromImage(imageUrl) {
+async function extractFromImage(imageRef) {
   const prompt = [
     '你是一个消费凭证识别助手。识别用户上传的消费图片（小票/发票/支付宝/微信账单详情页/银行 APP 交易截图等），提取记账需要的字段。',
     '',
@@ -56,15 +100,28 @@ async function extractFromImage(imageUrl) {
     '只输出一个 JSON 对象，例如：{"amount":45.5,"merchant":"全家便利店","category":"购物","date":"2026-07-15"}',
   ].join('\n')
 
+  // 1) 把图片引用转 base64（cloud:// → getTempFileURL → fetch → base64）
+  let dataUrl
+  try {
+    dataUrl = await fetchAsBase64DataUrl(imageRef)
+  } catch (e) {
+    return {
+      success: false,
+      code: 'IMAGE_FETCH_ERROR',
+      message: String(e && e.message || e).slice(0, 500),
+    }
+  }
+
   const ai = tcbApp.ai()
   if (!ai) {
     return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 @cloudbase/node-sdk 未初始化 AI 通道' }
   }
-  // ⚠️ 视觉 OCR 必须用真正的多模态模型。hunyuan-2.0-instruct(=hy3) 是【纯文本】模型，
-  // 传图会被忽略/报错，导致模型幻觉出错误 JSON（实测返回随机错的商家/金额/日期）。
-  // 改用 qwen3.5-plus（通义千问原生多模态模型，已在 cloudbase 组启用 + TokenHub 开通额度）：
-  // - content 数组顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
-  // - ocr action 增加 base64 data-URL 直传分支（以 `data:image` 开头时跳过 `getTempFileURL`）
+  // ⚠️ 视觉 OCR 模型选型（已实测验证，2026-08-01）：
+  // - hunyuan-2.0-instruct(=hy3) 纯文本模型，传图被忽略 → 幻觉错值（绝对不能用）
+  // - qwen3.5-flash 在 cloudbase 组网关下返回 400（模型 id 不被接受，勿用）
+  // - qwen3.5-plus ✅ 实测可用：cloudbase 组 + 真多模态 + 1.7s 返回准确识别
+  // - glm-5v-turbo 在 cloudbase 组未启用（DescribeAIModels 无），暂不可用
+  // content 数组顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
   const model = ai.createModel('cloudbase')
   let res
   try {
@@ -74,7 +131,7 @@ async function extractFromImage(imageUrl) {
         {
           role: 'user',
           content: [
-            { type: 'image_url', image_url: { url: imageUrl } },
+            { type: 'image_url', image_url: { url: dataUrl } },
             { type: 'text', text: prompt },
           ],
         },
@@ -347,28 +404,15 @@ exports.main = async (event, context) => {
       }
 
       // 拍照记账：识别小票图片 → 返回结构化字段
-      // payload: { imageUrl: 临时图片 URL 或云存储 fileID }
+      // payload: { imageUrl: 云存储 fileID (cloud://...) 或 https:// URL }
+      // ⚠️ 不再接受 base64 data-URL 作为生产入参（base64 走调用链路太长）。
+      //    base64 转换统一在 fetchAsBase64DataUrl() 内完成，调用方只传引用。
       case 'ocr': {
         const { imageUrl } = payload || {}
         if (!imageUrl) {
           return { success: false, code: 'MISSING_IMAGE', message: '缺少 imageUrl' }
         }
-        // fileID 需换临时访问 URL（云存储临时链接有效期短，云函数内同步用）
-        let realUrl = imageUrl
-        // base64 data-URL 直传（本地测试/前端可直传，跳过 fileID 临时 URL 环节）
-        if (imageUrl.startsWith('data:image')) {
-          realUrl = imageUrl
-        } else if (imageUrl.startsWith('cloud://') || imageUrl.startsWith('wxfile://')) {
-          try {
-            const tmp = await cloud.getTempFileURL({ fileList: [imageUrl] })
-            if (tmp.fileList && tmp.fileList[0] && tmp.fileList[0].tempFileURL) {
-              realUrl = tmp.fileList[0].tempFileURL
-            }
-          } catch (e) {
-            return { success: false, code: 'URL_RESOLVE_ERROR', message: e.message }
-          }
-        }
-        const result = await extractFromImage(realUrl)
+        const result = await extractFromImage(imageUrl)
         if (!result.success) return result
         return {
           success: true,
