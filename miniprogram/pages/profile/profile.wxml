@@ -15,12 +15,12 @@
   <view class="stat-card">
     <view class="stat-col">
       <view class="stat-label">本月支出</view>
-      <view class="stat-value expense">¥{{summary.month.expense}}</view>
+      <view class="stat-value expense">¥{{summary.monthExpenseText}}</view>
     </view>
     <view class="stat-divider"></view>
     <view class="stat-col">
       <view class="stat-label">本月收入</view>
-      <view class="stat-value income">¥{{summary.month.income}}</view>
+      <view class="stat-value income">¥{{summary.monthIncomeText}}</view>
     </view>
     <view class="stat-divider"></view>
     <view class="stat-col">

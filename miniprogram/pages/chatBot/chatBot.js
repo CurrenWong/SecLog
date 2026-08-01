@@ -155,16 +155,20 @@ Page({
         const pad = (n) => String(n).padStart(2, '0')
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
       }
-      const records = (r.records || []).map((x) => ({ ...x, createdAt: fmtDate(x.createdAt) }))
+      const records = (r.records || []).map((x) => ({ ...x, createdAt: fmtDate(x.createdAt), amountText: (x.amount || 0).toFixed(2) }))
+      const byCategory = (r.byCategory || []).map((c) => ({ ...c, amountText: (c.amount || 0).toFixed(2) }))
       self.setData({
         queryLoading: false,
         queryResult: {
           label,
           expenseTotal: r.expenseTotal || 0,
           incomeTotal: r.incomeTotal || 0,
+          expenseTotalText: (r.expenseTotal || 0).toFixed(2),
+          incomeTotalText: (r.incomeTotal || 0).toFixed(2),
           net: r.net || 0,
+          netText: (r.net || 0).toFixed(2),
           count: r.count || 0,
-          byCategory: r.byCategory || [],
+          byCategory,
           records,
         },
       })
@@ -222,16 +226,20 @@ Page({
         const pad = (n) => String(n).padStart(2, '0')
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
       }
-      const records = (r.records || []).map((x) => ({ ...x, createdAt: fmtDate(x.createdAt) }))
+      const records = (r.records || []).map((x) => ({ ...x, createdAt: fmtDate(x.createdAt), amountText: (x.amount || 0).toFixed(2) }))
+      const byCategory = (r.byCategory || []).map((c) => ({ ...c, amountText: (c.amount || 0).toFixed(2) }))
       self.setData({
         queryLoading: false,
         queryResult: {
           label,
           expenseTotal: r.expenseTotal || 0,
           incomeTotal: r.incomeTotal || 0,
+          expenseTotalText: (r.expenseTotal || 0).toFixed(2),
+          incomeTotalText: (r.incomeTotal || 0).toFixed(2),
           net: r.net || 0,
+          netText: (r.net || 0).toFixed(2),
           count: r.count || 0,
-          byCategory: r.byCategory || [],
+          byCategory,
           records,
         },
       })
@@ -1051,6 +1059,7 @@ Page({
               amount: r.amount != null ? String(r.amount) : '',
               merchant: r.merchant || '',
               category: r.category || '其他',
+              type: 'expense', // 默认支出（小票绝大多数是消费）
               date: r.date || '',
             },
           })
@@ -1082,6 +1091,12 @@ Page({
   onOcrCategoryChange(e) {
     this.setData({ 'ocrResult.category': e.detail.value })
   },
+  // 收入/支出切换（默认支出，用户在确认弹窗可改）
+  onOcrTypeChange(e) {
+    const t = e.currentTarget.dataset.type
+    if (t !== 'income' && t !== 'expense') return
+    this.setData({ 'ocrResult.type': t })
+  },
 
   // 取消确认
   onOcrCancel() {
@@ -1092,11 +1107,13 @@ Page({
   onOcrConfirm() {
     const r = this.data.ocrResult
     if (!r) return
-    const amount = parseFloat(r.amount)
-    if (isNaN(amount) || amount <= 0) {
+    const absAmount = parseFloat(r.amount)
+    if (isNaN(absAmount) || absAmount <= 0) {
       wx.showToast({ title: '金额无效', icon: 'none' })
       return
     }
+    // 支出存负数，收入存正数（默认支出）
+    const amount = r.type === 'income' ? absAmount : -absAmount
     const note = r.merchant ? r.merchant : ''
     this.setData({ showOcrModal: false })
     const comp = this.selectComponent('#agentui')

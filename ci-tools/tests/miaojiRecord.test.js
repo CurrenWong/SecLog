@@ -77,6 +77,99 @@ describe('miaojiRecord 云函数', () => {
       expect(r.list.length).toBe(1)
       expect(r.list[0].note).toBe('mine')
     })
+
+    // ===== 日期边界（与 stats 口径一致，北京时间月边界）=====
+    // 注入带历史 createdAt 的记录：上月末一笔 + 本月两笔。
+    // 用相对"当前北京时间"的计算，确保跨月场景稳定（不写死 8月）。
+    function seedMonthBoundary() {
+      const TZ_OFFSET = 8 * 60 * 60 * 1000
+      const nowBJ = new Date(Date.now() + TZ_OFFSET)
+      const y = nowBJ.getUTCFullYear()
+      const m = nowBJ.getUTCMonth() // 0-based，本月
+      // 上月最后一天（本月1号 - 1天）
+      const lastDayPrev = new Date(Date.UTC(y, m, 1) - TZ_OFFSET - 86400000)
+      // 本月某天（本月10号，若当前在月初10号前则用本月2号，避免越界）
+      const dom = nowBJ.getUTCDate() >= 10 ? 10 : 2
+      const midMonth = new Date(Date.UTC(y, m, dom) - TZ_OFFSET + 12 * 3600000)
+      const mk = (amount, type, category, note, d) => ({
+        _id: 'lb_' + Math.random().toString(36).slice(2, 8),
+        openid: 'monthUser',
+        amount, type, category, note,
+        createdAt: d,
+      })
+      cloud.__reset([
+        mk(-99, 'expense', '其他', '上月末', lastDayPrev),
+        mk(-50, 'expense', '餐饮', '本月A', midMonth),
+        mk(8000, 'income', '工资', '本月收入', midMonth),
+      ], { OPENID: 'monthUser' })
+    }
+
+    test('month:"this" 不含上月末（修复：7月31日不出现在8月本月）', async () => {
+      seedMonthBoundary()
+      const r = await call('list', { month: 'this', limit: 100 }, { OPENID: 'monthUser' })
+      expect(r.success).toBe(true)
+      // 只应有本月的两笔（上月末被排除）
+      expect(r.list.length).toBe(2)
+      expect(r.list.every((x) => x.note !== '上月末')).toBe(true)
+      // 含本月收入与支出
+      expect(r.list.some((x) => x.note === '本月收入')).toBe(true)
+      expect(r.list.some((x) => x.note === '本月A')).toBe(true)
+    })
+
+    test('month:"this" 起点为本月1号0点（北京时间）', async () => {
+      seedMonthBoundary()
+      // 注入一笔"本月1号 00:30 北京时间"（恰好跨过起点）
+      const TZ_OFFSET = 8 * 60 * 60 * 1000
+      const nowBJ = new Date(Date.now() + TZ_OFFSET)
+      const y = nowBJ.getUTCFullYear()
+      const m = nowBJ.getUTCMonth()
+      const firstDayEarly = new Date(Date.UTC(y, m, 1) - TZ_OFFSET + 30 * 60000) // 本月1号 00:30 BJ
+      cloud.__reset([
+        { _id: 'fd', openid: 'monthUser', amount: -5, type: 'expense', category: '其他', note: '本月1号凌晨', createdAt: firstDayEarly },
+      ], { OPENID: 'monthUser' })
+      const r = await call('list', { month: 'this', limit: 100 }, { OPENID: 'monthUser' })
+      expect(r.list.length).toBe(1)
+      expect(r.list[0].note).toBe('本月1号凌晨')
+    })
+
+    test('month:"YYYY-MM" 精确统计指定月份（跨年1月）', async () => {
+      // 注入 2025-01 / 2025-02 / 2026-01 各一笔
+      cloud.__reset([
+        { _id: 'a', openid: 'ym', amount: -1, type: 'expense', category: '其他', note: '2025-01', createdAt: new Date('2025-01-15T12:00:00.000Z') },
+        { _id: 'b', openid: 'ym', amount: -2, type: 'expense', category: '其他', note: '2025-02', createdAt: new Date('2025-02-15T12:00:00.000Z') },
+        { _id: 'c', openid: 'ym', amount: -3, type: 'expense', category: '其他', note: '2026-01', createdAt: new Date('2026-01-15T12:00:00.000Z') },
+      ], { OPENID: 'ym' })
+      const r = await call('list', { month: '2025-01', limit: 100 }, { OPENID: 'ym' })
+      expect(r.list.length).toBe(1)
+      expect(r.list[0].note).toBe('2025-01')
+    })
+
+    test('startDate+endDate 区间含两端当天（与 stats 一致）', async () => {
+      // 注意：云函数 toUtcMidnight 把 startDate/endDate 当【北京时间】解释，
+      // 所以 createdAt 也要按北京时间填，再转 UTC（北京时间 = UTC + 8h）。
+      // endDate 边界用 _.lt(end)（不含等号），故 D2 填 endDate 当天内但早于 23:59:59.999。
+      cloud.__reset([
+        { _id: 'a', openid: 'rg', amount: -1, type: 'expense', category: '其他', note: 'D1', createdAt: new Date(Date.UTC(2026, 2, 1, 0, 0, 0, 0)) }, // 北京时间 3-1 08:00 ✓ 含
+        { _id: 'b', openid: 'rg', amount: -2, type: 'expense', category: '其他', note: 'D2', createdAt: new Date(Date.UTC(2026, 2, 5, 4, 0, 0, 0)) }, // 北京时间 3-5 12:00 ✓ 含
+        { _id: 'c', openid: 'rg', amount: -3, type: 'expense', category: '其他', note: 'D3-out', createdAt: new Date(Date.UTC(2026, 2, 5, 16, 0, 1, 0)) }, // 北京时间 3-6 00:00:01 ✗ 排除
+      ], { OPENID: 'rg' })
+      const r = await call('list', { startDate: '2026-03-01', endDate: '2026-03-05', limit: 100 }, { OPENID: 'rg' })
+      expect(r.list.length).toBe(2) // D1 + D2 含两端，D3-out 排除
+      expect(r.list.every((x) => x.note !== 'D3-out')).toBe(true)
+    })
+
+    test('days 滚动窗口兜底（最近 N 天，仅无 month/startDate 时）', async () => {
+      // 注入 40 天前 / 10 天前 / 今天 各一笔
+      const now = Date.now()
+      cloud.__reset([
+        { _id: 'old', openid: 'dw', amount: -1, type: 'expense', category: '其他', note: '40天前', createdAt: new Date(now - 40 * 86400000) },
+        { _id: 'mid', openid: 'dw', amount: -2, type: 'expense', category: '其他', note: '10天前', createdAt: new Date(now - 10 * 86400000) },
+        { _id: 'now', openid: 'dw', amount: -3, type: 'expense', category: '其他', note: '今天', createdAt: new Date(now) },
+      ], { OPENID: 'dw' })
+      const r = await call('list', { days: 15, limit: 100 }, { OPENID: 'dw' })
+      expect(r.list.length).toBe(2) // 10天前 + 今天，40天前排除
+      expect(r.list.every((x) => x.note !== '40天前')).toBe(true)
+    })
   })
 
   describe('delete', () => {

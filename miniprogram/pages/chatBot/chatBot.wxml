@@ -55,10 +55,10 @@
     <block wx:elif="{{queryResult}}">
       <view class="query-summary">
         <view class="q-label">{{queryResult.label}}共记 {{queryResult.count}} 笔</view>
-        <view class="q-amount">支出 ¥{{queryResult.expenseTotal < 0 ? queryResult.expenseTotal * -1 : queryResult.expenseTotal}}</view>
-        <view wx:if="{{queryResult.incomeTotal > 0}}" class="q-income">收入 ¥{{queryResult.incomeTotal}}</view>
+        <view class="q-amount">支出 ¥{{queryResult.expenseTotalText}}</view>
+        <view wx:if="{{queryResult.incomeTotal > 0}}" class="q-income">收入 ¥{{queryResult.incomeTotalText}}</view>
         <view wx:if="{{queryResult.byCategory.length}}" class="q-cats">
-          <text wx:for="{{queryResult.byCategory}}" wx:key="category" class="q-cat">{{item.category}} ¥{{item.amount < 0 ? item.amount * -1 : item.amount}} </text>
+          <text wx:for="{{queryResult.byCategory}}" wx:key="category" class="q-cat">{{item.category}} ¥{{item.amountText}} </text>
         </view>
       </view>
 
@@ -68,7 +68,7 @@
             <text class="q-rec-cat">{{item.category}}</text>
             <text class="q-rec-note">{{item.note || ''}}</text>
           </view>
-          <text class="q-rec-amt {{item.type==='income'?'amt-in':'amt-out'}}">{{item.type==='income'?'+':'-'}}¥{{item.amount < 0 ? item.amount * -1 : item.amount}}</text>
+          <text class="q-rec-amt {{item.type==='income'?'amt-in':'amt-out'}}">{{item.type==='income'?'+':'-'}}¥{{item.amountText}}</text>
           <text class="q-rec-date">{{item.createdAt}}</text>
           <view class="q-rec-ops">
             <text class="q-op q-op-edit" data-rec="{{item}}" bindtap="onEditRecord">改</text>
@@ -100,6 +100,14 @@
       <view class="ocr-row">
         <text class="ocr-label">金额</text>
         <input class="ocr-input" type="digit" value="{{ocrResult.amount}}" placeholder="0.00" bindinput="onOcrAmountInput" />
+      </view>
+
+      <view class="ocr-row">
+        <text class="ocr-label">类型</text>
+        <view class="ocr-type-toggle">
+          <view class="ocr-type-opt {{ocrResult.type === 'expense' ? 'active expense' : ''}}" bindtap="onOcrTypeChange" data-type="expense">支出</view>
+          <view class="ocr-type-opt {{ocrResult.type === 'income' ? 'active income' : ''}}" bindtap="onOcrTypeChange" data-type="income">收入</view>
+        </view>
       </view>
 
       <view class="ocr-row">

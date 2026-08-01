@@ -16,6 +16,9 @@ const _ = db.command
 const COLLECTION = 'miaoji_records'
 const { parseOcrResponse } = require('./parseOcr')
 
+// 金额四舍五入保留两位小数（消除 JS 浮点累加误差，如 76.8 + 74.47 = 151.26999999999998）
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100
+
 // 小程序端调用时 openid 一定有；非微信上下文直接调用（如测试）时为 undefined。
 // 为空时返回全部数据（测试/管理场景），不过滤以免 where({}) 报错。
 function ownerQuery() {
@@ -124,27 +127,50 @@ async function extractFromImage(imageRef) {
   // content 数组顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
   const model = ai.createModel('cloudbase')
   let res
-  try {
-    res = await model.generateText({
-      model: 'qwen3.5-plus',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: dataUrl } },
-            { type: 'text', text: prompt },
-          ],
-        },
-      ],
-    })
-  } catch (e) {
+  let lastErr
+  // 云端 AI 网关偶发 400（限流/鉴权抖动），加重试覆盖（指数退避，最多 3 次）
+  const MAX_RETRY = 3
+  for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+    try {
+      res = await model.generateText({
+        model: 'qwen3.5-plus',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: dataUrl } },
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
+      })
+      lastErr = null
+      break
+    } catch (e) {
+      lastErr = e
+      // 仅对 400/403/429 等可重试错误重试，参数错误（其他 4xx）直接抛
+      const status = e && e.status
+      const isRetryable = !status || [400, 403, 429, 500, 502, 503].includes(status)
+      if (!isRetryable || attempt === MAX_RETRY) {
+        return {
+          success: false,
+          code: 'AI_CALL_ERROR',
+          message: String(e && e.message || e).slice(0, 500),
+          stack: String(e && e.stack || '').slice(0, 500),
+          status,
+          attempt,
+          responseBody: e && e.response && e.response.body ? String(e.response.body).slice(0, 500) : undefined,
+        }
+      }
+      // 退避：400ms / 800ms
+      await new Promise((r) => setTimeout(r, 400 * attempt))
+    }
+  }
+  if (lastErr) {
     return {
       success: false,
       code: 'AI_CALL_ERROR',
-      message: String(e && e.message || e).slice(0, 500),
-      stack: String(e && e.stack || '').slice(0, 500),
-      status: e && e.status,
-      responseBody: e && e.response && e.response.body ? String(e.response.body).slice(0, 500) : undefined,
+      message: String(lastErr && lastErr.message || lastErr).slice(0, 500),
     }
   }
 
@@ -161,7 +187,7 @@ async function extractFromImage(imageRef) {
 
   return {
     success: true,
-    amount: parsed2.amount,
+    amount: round2(parsed2.amount),
     merchant: parsed2.merchant,
     category: parsed2.category,
     date: parsed2.date,
@@ -183,7 +209,7 @@ exports.main = async (event, context) => {
         const openid = cloud.getWXContext().OPENID
         const record = {
           openid: openid || 'anonymous',
-          amount: Number(amount),
+          amount: round2(Number(amount)),
           type: type || (amount < 0 ? 'expense' : 'income'), // expense 支出 / income 收入
           category: category || '其他',
           note: note || '',
@@ -193,10 +219,20 @@ exports.main = async (event, context) => {
         return { success: true, _id: res._id, record }
       }
 
-      // 查询最近 N 笔（支持 days 过滤最近 N 天）
+      // 查询最近 N 笔（支持 days / month / startDate+endDate 过滤）
       case 'list': {
         const limit = Math.min(Number(payload && payload.limit) || 10, 200)
         const days = Number(payload && payload.days) || 0
+        const month = payload && payload.month
+        const startDate = payload && payload.startDate
+        const endDate = payload && payload.endDate
+        // 北京时间偏移（与 stats 口径一致）：所有"月/日"边界按北京时间解释再换算 UTC
+        const TZ_OFFSET = 8 * 60 * 60 * 1000
+        // 把"北京时间的 y-m-d HH:MM:SS"解释为 UTC 毫秒（endOfDay=true → 当天 23:59:59.999）
+        const toUtcMidnight = (y, m, d, endOfDay) => {
+          const base = Date.UTC(y, m - 1, d, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0)
+          return new Date(base - TZ_OFFSET) // 北京时间 0 点 = UTC 前一天 16:00
+        }
         // ⚠️ CloudBase 文档库多个 .where() 链式调用是【覆盖】关系，必须把多个字段合并到单个对象里
         // 之前 `query.where(owner)` 然后 `query.where({ createdAt: ... })` 会让 owner 被 createdAt 覆盖
         // 后果：days > 0 时 owner 过滤丢失，返回了【所有用户】的记录，导致前端看到「别人」的数据，且
@@ -205,7 +241,26 @@ exports.main = async (event, context) => {
         // 修复：把所有筛选条件塞进单个 where({...})，多字段间由 SDK 自动 AND。
         const cond = {}
         if (owner) cond.openid = owner.openid
-        if (days > 0) {
+        if (startDate && endDate) {
+          // 任意时间段：北京时间当天 0 点起 → 含当天 23:59:59.999
+          const [sy, sm, sd] = startDate.split('-').map(Number)
+          const [ey, em, ed] = endDate.split('-').map(Number)
+          const start = toUtcMidnight(sy, sm, sd, false)
+          const end = toUtcMidnight(ey, em, ed, true)
+          cond.createdAt = _.gte(start).and(_.lt(end))
+        } else if (month && month !== 'this') {
+          // month 格式 'YYYY-MM'
+          const [y, m] = month.split('-').map(Number)
+          const start = toUtcMidnight(y, m, 1, false)
+          const end = toUtcMidnight(y, m + 1, 1, false)
+          cond.createdAt = _.gte(start).and(_.lt(end))
+        } else if (month === 'this') {
+          // 本月：北京时间本月 1 号 0 点起（无上限，含今天）
+          const nowBJ = new Date(Date.now() + TZ_OFFSET)
+          const start = toUtcMidnight(nowBJ.getUTCFullYear(), nowBJ.getUTCMonth() + 1, 1, false)
+          cond.createdAt = _.gte(start)
+        } else if (days > 0) {
+          // 兜底：最近 N 天滚动窗口（仅在没有更精确的 month/startDate 时使用）
           const since = new Date(Date.now() - days * 24 * 3600 * 1000)
           cond.createdAt = _.gte(since)
         }
@@ -214,7 +269,9 @@ exports.main = async (event, context) => {
           .orderBy('createdAt', 'desc')
           .limit(limit)
           .get()
-        return { success: true, list: res.data, total: res.data.length }
+        // 每条金额 round2，避免前端拿到浮点长尾（如 74.47 本身干净，但保险起见统一处理）
+        const list = res.data.map((r) => Object.assign({}, r, { amount: round2(r.amount) }))
+        return { success: true, list, total: list.length }
       }
 
       // 删除一笔
@@ -272,9 +329,12 @@ exports.main = async (event, context) => {
 
       // 汇总（今日 / 本月）
       case 'summary': {
-        const now = new Date()
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+        // 记账用户在中国时区（UTC+8）。日期边界按北京时间算，否则 7 月底北京时间的数据
+        // 在 UTC 下属于 7 月，会被 _.gte(UTC 8月1日) 整批漏掉 → 本月支出显示 0。
+        const TZ_OFFSET = 8 * 60 * 60 * 1000
+        const now = new Date(Date.now() + TZ_OFFSET) // 转成"北京时间"视角
+        const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0) - TZ_OFFSET)
+        const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0) - TZ_OFFSET)
 
         const buildQuery = (start) => {
           let q = db.collection(COLLECTION).where({ createdAt: _.gte(start) })
@@ -289,8 +349,8 @@ exports.main = async (event, context) => {
 
         const calc = (rows) => rows.data.reduce(
           (acc, r) => {
-            if (r.type === 'income') acc.income += r.amount
-            else acc.expense += r.amount
+            if (r.type === 'income') acc.income = round2(acc.income + r.amount)
+            else acc.expense = round2(acc.expense + r.amount)
             return acc
           },
           { income: 0, expense: 0 }
@@ -310,12 +370,16 @@ exports.main = async (event, context) => {
       //   category?: 指定分类
       case 'stats': {
         const { month, category, startDate, endDate } = payload || {}
-        // 确定统计起止时间（统一用 UTC 边界，与数据库 createdAt 的 UTC 存储一致，避免时区错位漏数据）
+        // 确定统计起止时间
+        // 记账用户在中国时区（UTC+8）。所有"日/月"边界按北京时间解释，再换算成对应的 UTC 毫秒，
+        // 与数据库 serverDate() 存的 UTC 时间比较。避免 7 月底北京时间的数据在 UTC 下漏统计。
+        const TZ_OFFSET = 8 * 60 * 60 * 1000 // 北京时间相对 UTC 的毫秒偏移
         let start, end
         let useLt = false // 是否加 _.lt(end) 上限
+        // 把"北京时间的 y-m-d HH:MM:SS"解释为 UTC 毫秒。endOfDay=true → 当天 23:59:59.999
         const toUtcMidnight = (y, m, d, endOfDay) => {
-          // endOfDay=true → 当天 23:59:59.999 UTC；false → 当天 00:00:00.000 UTC
-          return new Date(Date.UTC(y, m - 1, d, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0))
+          const base = Date.UTC(y, m - 1, d, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0)
+          return new Date(base - TZ_OFFSET) // 减去偏移：北京时间 0 点 = UTC 前一天 16:00
         }
         if (startDate && endDate) {
           // 任意时间段：startDate 当天 0 点 UTC 起，endDate 含当天 23:59:59.999 UTC
@@ -331,10 +395,9 @@ exports.main = async (event, context) => {
           end = toUtcMidnight(y, m + 1, 1, false) // 下月 1 号 0 点 UTC（不含）
           useLt = true
         } else {
-          // 本月：与 summary 对齐，只用 _.gte(startOfMonth UTC)，不加 _.lt
-          // （避免云端 serverDate 存 UTC、本地构造 end 时区错位导致整月数据被过滤）
-          const now = new Date()
-          start = toUtcMidnight(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, false)
+          // 本月：按北京时间视角的年月算（toUtcMidnight 会把入参当北京时间解释）
+          const nowBJ = new Date(Date.now() + TZ_OFFSET) // 北京时间视角
+          start = toUtcMidnight(nowBJ.getUTCFullYear(), nowBJ.getUTCMonth() + 1, 1, false)
         }
 
         // 注意：CloudBase 文档库多次 .where() 是覆盖关系，不能链式加 _.lt(end)。
@@ -352,11 +415,11 @@ exports.main = async (event, context) => {
         let incomeTotal = 0
         for (const r of rows) {
           if (r.type === 'income') {
-            incomeTotal += r.amount
+            incomeTotal = round2(incomeTotal + r.amount)
           } else {
-            expenseTotal += r.amount
+            expenseTotal = round2(expenseTotal + r.amount)
             const cat = r.category || '其他'
-            byCategory[cat] = (byCategory[cat] || 0) + r.amount
+            byCategory[cat] = round2((byCategory[cat] || 0) + r.amount)
           }
         }
 
@@ -375,14 +438,14 @@ exports.main = async (event, context) => {
 
         // 分类排序（绝对值从大到小）
         const categories = Object.keys(byCategory)
-          .map((c) => ({ category: c, amount: byCategory[c] }))
+          .map((c) => ({ category: c, amount: round2(byCategory[c]) }))
           .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
 
         // 本月真实逐笔记录（供前端拼明细，避免模型编造）
         const records = rows
           .map((r) => ({
             _id: r._id,
-            amount: r.amount,
+            amount: round2(r.amount),
             type: r.type || (r.amount < 0 ? 'expense' : 'income'),
             category: r.category || '其他',
             note: r.note || '',
@@ -396,7 +459,7 @@ exports.main = async (event, context) => {
           rangeLabel: (startDate && endDate) ? `${startDate} ~ ${endDate}` : '',
           expenseTotal,
           incomeTotal,
-          net: incomeTotal + expenseTotal, // 支出为负，收入为正 → 净 = 收入 + 支出
+          net: round2(incomeTotal + expenseTotal), // 支出为负，收入为正 → 净 = 收入 + 支出
           count: rows.length,
           byCategory: categories,
           records,

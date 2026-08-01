@@ -13,12 +13,12 @@
   <view class="summary-card">
     <view class="summary-col">
       <view class="summary-label">今日支出</view>
-      <view class="summary-value expense">¥{{summary.day.expense}}</view>
+      <view class="summary-value expense">¥{{summary.dayExpenseText}}</view>
     </view>
     <view class="summary-divider"></view>
     <view class="summary-col">
       <view class="summary-label">本月支出</view>
-      <view class="summary-value expense">¥{{summary.month.expense}}</view>
+      <view class="summary-value expense">¥{{summary.monthExpenseText}}</view>
     </view>
   </view>
 
@@ -52,7 +52,7 @@
         <view class="record-note">{{item.note || '无备注'}}</view>
         <view class="record-time">{{item.time}}</view>
         <view class="record-amount {{item.type === 'income' ? 'income' : 'expense'}}">
-          {{item.type === 'income' ? '+' : '-'}}¥{{item.amount < 0 ? -item.amount : item.amount}}
+          {{item.type === 'income' ? '+' : '-'}}¥{{item.amountText}}
         </view>
       </view>
     </view>

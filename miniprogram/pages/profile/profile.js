@@ -37,9 +37,13 @@ Page({
       data: { action: 'stats', payload: { type: 'month' } },
     }).then((res) => {
       if (res.result && res.result.success) {
+        const incomeT = res.result.incomeTotal || 0
+        const expenseT = Math.abs(res.result.expenseTotal || 0)
         this.setData({
           summary: {
-            month: { income: res.result.incomeTotal || 0, expense: Math.abs(res.result.expenseTotal || 0) },
+            month: { income: incomeT, expense: expenseT },
+            monthIncomeText: incomeT.toFixed(2),
+            monthExpenseText: expenseT.toFixed(2),
             count: res.result.count || 0,
           },
         })

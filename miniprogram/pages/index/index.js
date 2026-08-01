@@ -24,7 +24,17 @@ Page({
       data: { action: 'summary' },
     }).then((res) => {
       if (res.result && res.result.success) {
-        this.setData({ summary: res.result })
+        const s = res.result
+        this.setData({
+          summary: {
+            day: { income: s.day.income, expense: s.day.expense },
+            month: { income: s.month.income, expense: s.month.expense },
+            dayIncomeText: (s.day.income || 0).toFixed(2),
+            dayExpenseText: (s.day.expense || 0).toFixed(2),
+            monthIncomeText: (s.month.income || 0).toFixed(2),
+            monthExpenseText: (s.month.expense || 0).toFixed(2),
+          },
+        })
       }
     }).catch((err) => {
       console.error('summary failed', err)
@@ -39,6 +49,7 @@ Page({
         const recent = (res.result.list || []).map((r) => ({
           _id: r._id,
           amount: r.amount,
+          amountText: (r.amount || 0).toFixed(2),
           type: r.type,
           category: r.category,
           note: r.note,

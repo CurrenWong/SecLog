@@ -7,11 +7,11 @@
     </view>
     <view class="sum-col">
       <view class="sum-label">支出</view>
-      <view class="sum-val expense">¥{{totalExpense}}</view>
+      <view class="sum-val expense">¥{{totalExpenseText}}</view>
     </view>
     <view class="sum-col">
       <view class="sum-label">收入</view>
-      <view class="sum-val income">¥{{totalIncome}}</view>
+      <view class="sum-val income">¥{{totalIncomeText}}</view>
     </view>
   </view>
 
@@ -34,7 +34,7 @@
       <view class="td td-cat">{{item.category}}</view>
       <view class="td td-note">{{item.note || '-'}}</view>
       <view class="td td-amount {{item.type === 'income' ? 'income' : 'expense'}}">
-        {{item.type === 'income' ? '+' : '-'}}¥{{item.amount < 0 ? -item.amount : item.amount}}
+        {{item.type === 'income' ? '+' : '-'}}¥{{item.amountText}}
       </view>
       <view class="td td-op">
         <view class="edit-btn" data-id="{{item._id}}" bind:tap="onEdit">改</view>

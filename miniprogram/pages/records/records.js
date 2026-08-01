@@ -1,5 +1,7 @@
-const { computeCurrentMonthDays } = require('../../utils/dateRange')
 const { checkDeleteResult } = require('../../utils/deleteResult')
+
+// 金额保留两位小数（消除 JS 浮点累加误差，如 76.8 + 74.47 = 151.26999999999998）
+const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100
 
 Page({
   data: {
@@ -32,7 +34,7 @@ Page({
     const isTarget = !!this._targetId
     const payload = isTarget
       ? { days: 3650, limit: 5000 }
-      : { days: computeCurrentMonthDays(), limit: 200 } // 月初到今天（含），与查账页面「本月」口径一致
+      : { month: 'this', limit: 200 } // 北京时间本月 1 号 0 点起（含今天），与查账面板「本月」口径一致
     wx.cloud.callFunction({
       name: 'miaojiRecord',
       data: { action: 'list', payload },
@@ -53,17 +55,20 @@ Page({
             note: r.note || '',
             type: r.type || 'expense',
             amount: r.amount,
+            amountText: round2(r.amount).toFixed(2),
             dateStr,
             timeStr,
           }
         })
-        const totalExpense = list.filter((r) => r.type !== 'income').reduce((s, r) => s + Math.abs(r.amount), 0)
-        const totalIncome = list.filter((r) => r.type === 'income').reduce((s, r) => s + Math.abs(r.amount), 0)
+        const totalExpense = round2(list.filter((r) => r.type !== 'income').reduce((s, r) => s + Math.abs(r.amount), 0))
+        const totalIncome = round2(list.filter((r) => r.type === 'income').reduce((s, r) => s + Math.abs(r.amount), 0))
         this.setData({
           records: list,
           total: list.length,
           totalExpense,
           totalIncome,
+          totalExpenseText: totalExpense.toFixed(2),
+          totalIncomeText: totalIncome.toFixed(2),
           loading: false,
         })
         // 定位模式：找到目标记录后自动打开 改 / 删

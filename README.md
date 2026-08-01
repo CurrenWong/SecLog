@@ -25,9 +25,9 @@
 - ↩️ **撤回 / 更正**："记错了" 撤回最近一笔；"想起来错了，是60" 更正金额
 - 📊 **首页汇总**：今日 / 本月收支 + 最近 5 笔，下拉刷新
 - 🛡️ **误记防护**：裸数字（"我身高180""墙高3块砖"）不记账；含消费意图词（"午饭38"）才记
-- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数 `cloud.ai()` + `hunyuan-2.0-instruct` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、默认不预填防错账）再入库。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
+- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数 `cloud.ai()` + `qwen3.5-plus` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、**默认记为支出**、可一键切换收入/支出防错账）再入库。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
 - 👤 **登录 + 个人中心**（已上线）：进入自动静默登录（云函数 `login` 取 openid/unionid，落地 `users` 集合）；个人中心可改头像（chooseAvatar 上传 `avatars/`）/昵称、看本月汇总与笔数、退出登录
-- 📋 **记账明细页**（已上线）：按最近 30 天列出全部记录，支持编辑（金额/类别/备注）与删除，数据按 openid 隔离
+- 📋 **记账明细页**（已上线）：按**本月**（自然月，北京时间月边界，与查账面板口径一致）列出全部记录，支持编辑（金额/类别/备注/收入支出方向）与删除，数据按 openid 隔离
 
 ## 架构
 
@@ -84,8 +84,8 @@
 **拍照记账分支**（对话页浮动按钮触发）：
 ```
 选图 → wx.cloud.uploadFile(ocr_tmp/) → miaojiRecord(ocr, {imageUrl:fileID})
-     → 云函数 cloud.ai() + qwen3.5-flash 多模态识别 → {amount,merchant,category,date}
-     → 前端确认卡片（金额可改、默认不预填） → miaojiRecord(add)
+     → 云函数 cloud.ai() + qwen3.5-plus 多模态识别 → {amount,merchant,category,date}
+     → 前端确认卡片（金额可改、默认支出、可切收入/支出） → miaojiRecord(add)
 ```
 
 **登录分支**（app.js `onLaunch` 静默调用）：
@@ -109,7 +109,7 @@ miaojiRecord(login) → 取 openid/unionid，upsert users 集合
 - 对话 UI 复用 `components/agent-ui` 组件（bot 模式，直连大模型）
 - 意图理解：`miniprogram/utils/extractByModel.js`（`classifyIntent` + prompt）
 - 记账数据：`cloudfunctions/miaojiRecord/` 云函数（增 / 查 / 删 / 汇总 / 统计）
-- 本地测试：`ci-tools/`（Jest，160 用例全绿，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成）
+- 本地测试：`ci-tools/`（Jest，184+ 用例全绿，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成 / 月边界）
 - 基础库最低 `3.8.1`，本地推荐 `3.16.2`（见 `project.private.config.json`）
 
 ## 目录结构
@@ -123,7 +123,7 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 │   │   │   └── chatBot.js      ← ⭐ 意图路由 + 多轮上下文 + 查询模板 + 拍照 OCR 确认流（核心）
 │   │   ├── guide/              ← 使用引导页（独立入口）
 │   │   ├── profile/            ← 个人中心：头像/昵称/本月汇总/退出登录
-│   │   └── records/           ← 记账明细：列表 + 编辑 + 删除（最近 30 天）
+│   │   └── records/           ← 记账明细：列表 + 编辑 + 删除（本月，月边界与查账面板一致）
 │   ├── components/
 │   │   ├── agent-ui/           ← 对话主体组件（含工具卡片渲染）
 │   │   └── toolCard/           ← 地图/天气/商家等工具卡（agent-ui 依赖，勿删）
