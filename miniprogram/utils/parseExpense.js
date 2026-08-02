@@ -19,7 +19,7 @@ const CATEGORY_KEYWORDS = {
         // Fix #3: 英文/品牌别名
         'starbucks', '星巴克', 'kfc', '肯德基', 'mcdonald', '麦当劳', '麦门', 'burgerking', '汉堡王', '赛百味', 'pizza', '必胜客', '瑞幸', 'luckin', '蜜雪', '喜茶', '奈雪', '一点点', 'coco',
         ],
-  交通: ['打车', '地铁', '公交', '车', '油', '停车', '高铁', '火车', '飞机', '机票', '滴滴', 'taxi', 'bus', 'subway', 'metro', 'uber', 'lyft', 'tram', 'train', 'flight', '顺风车', '拼车', '自驾', '过路费', '加油'],
+  交通: ['打车', '地铁', '公交', '车', '油', '停车', '高铁', '火车', '飞机', '机票', '滴滴', 'taxi', 'bus', 'subway', 'metro', 'uber', 'lyft', 'tram', 'train', 'flight', '顺风车', '拼车', '自驾', '过路费', '高速费', '加油'],
   购物: ['买', '购', '衣服', '鞋', '包', '数码', '手机', '电脑', '淘宝', '京东', '超市', '网购', '快递'],
   居家: ['房租', '水电', '物业', '家居', '家具', '日用品', '生活用品', '理发', '美容'],
   娱乐: ['电影', '游戏', '娱乐', '唱k', 'ktv', '旅游', '玩', '健身', '运动', '演唱会', '话剧', '展览'],
@@ -56,12 +56,14 @@ const AMOUNT_PATTERNS = [
 ]
 
 // 分类映射：从 CATEGORY_KEYWORDS 派生
+// 顺序：娱乐（含"旅游"）优先于交通——用户明确要求"旅游"分类优先于交通，
+// 故"旅游高速费"按"旅游"归入娱乐而非按"高速费"归交通。
 const CATEGORY_MAP = [
   { keys: CATEGORY_KEYWORDS.餐饮, cat: '餐饮' },
+  { keys: CATEGORY_KEYWORDS.娱乐, cat: '娱乐' },
   { keys: CATEGORY_KEYWORDS.交通, cat: '交通' },
   { keys: CATEGORY_KEYWORDS.购物, cat: '购物' },
   { keys: CATEGORY_KEYWORDS.居家, cat: '居家' },
-  { keys: CATEGORY_KEYWORDS.娱乐, cat: '娱乐' },
   { keys: CATEGORY_KEYWORDS.医疗, cat: '医疗' },
   { keys: CATEGORY_KEYWORDS.教育, cat: '教育' },
 ]
@@ -89,14 +91,32 @@ function extractAmount(text) {
         if (cn !== null) return cn
         continue
       }
-      return parseFloat(raw)
+      let val = parseFloat(raw)
+      // Fix #6: 中文口语金额 "X块Y"（47块5 = 47.5）。
+      // 金额正则常把 "47块" 中的 "块" 吃进 m[0]，其后紧跟一位小鱼角（如 "5"）。
+      // 例："高速费47块5" → m[0]="高速费47块"，after="5" → 合并成 47.5。
+      const after = text.slice(m.index + m[0].length)
+      const jiao = after.match(/^(\d)(?!\d)/)
+      if (jiao) {
+        val = val + parseInt(jiao[1], 10) / 10
+      }
+      return val
     }
   }
   return null
 }
 
 function stripAmount(text) {
-  return text.replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)?/i, '').trim().slice(0, 20)
+  // Fix #6: 剥掉金额本体，含口语 "X块Y"（47块5 = 47.5）里的角数字。
+  return text
+    // 情况1: 数字+单位(+可选角数字)，如 "47块5" / "47元5" / "47块" / "47元"
+    .replace(/[-+]?\d+(?:\.\d+)?\s*(?:元|块|刀|rmb)\s*\d?(?!\d)/i, '')
+    // 情况2: 纯数字无单位，如 "打车45" / "午饭38" 里的 "45" / "38"
+    .replace(/[-+]?\d+(?:\.\d+)?/i, '')
+    // 情况3: 金额正则已吃掉整数、单位后残留的 "块+一位角数字"，如 "高速费5"
+    .replace(/(?:元|块|块钱)\s*\d(?!\d)/i, '')
+    .trim()
+    .slice(0, 20)
 }
 
 // 通用数字+文本兜底：覆盖白名单外的新品类词（"谷子20""手办15""海报8"等）。

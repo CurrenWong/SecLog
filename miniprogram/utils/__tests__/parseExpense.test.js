@@ -123,6 +123,21 @@ test('Lyft 25 → 交通 -25', () => {
   assert.equal(r.category, '交通')
 })
 
+// —— 中文口语金额 "X块Y"（47块5 = 47.5）——
+// "旅游"属娱乐分类且优先级高于交通，故"旅游高速费"按"旅游"归娱乐；
+// 单独说"高速费"才归交通。
+test('旅游高速费47块5 → 娱乐 -47.5（旅游优先于交通）', () => {
+  const r = parseExpense('旅游高速费47块5')
+  assert.equal(r.amount, -47.5)
+  assert.equal(r.category, '娱乐')
+})
+
+test('高速费47块5 → 交通 -47.5', () => {
+  const r = parseExpense('高速费47块5')
+  assert.equal(r.amount, -47.5)
+  assert.equal(r.category, '交通')
+})
+
 // —— 边界：仅有英文消费词无金额 → null ——
 test('仅"taxi"无金额 → null', () => {
   assert.equal(parseExpense('taxi'), null)
