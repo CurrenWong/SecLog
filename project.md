@@ -241,6 +241,59 @@ node ci-tools/scripts/realOcrTest.js --strict       # CI 严格模式（失败 e
 - 断言：amount≈76.80 / category∈{娱乐,其他} / date 含 `2026-07-31` / merchant 含「影城」。
 
 ---
+### 5.5 已覆盖的测试用例边界（改代码前必读 ⚠️）
+
+> 这些是**现有测试已守护的边界**。改对应逻辑时，先跑相关套件确认没破坏；新增边界必须补用例。
+
+#### A. 云函数 `miaojiRecord`（Jest · `miaojiRecord.test.js`）
+| 边界 | 覆盖点 |
+|---|---|
+| **add 金额符号** | 负金额→expense；正金额→income；缺省分类→「其他」 |
+| **add 非法输入** | `amount:'abc'` → `INVALID_AMOUNT` |
+| **add 无 OPENID** | 回退 `anonymous` 且能写入 |
+| **list 倒序 / 截断** | 最近 N 笔倒序；`limit>200` 截断到 200 |
+| **list owner 隔离** | 只返回自己记录，他人不可见 |
+| **list 月边界（北京时间）** | `month:'this'` 不含上月末（修复 7/31 误入 8 月本月）；起点为本月 1 号 0 点（北京时间）；`month:'YYYY-MM'` 精确跨年（2025-01 / 2026-01 互不串）；`startDate+endDate` 含两端当天、`_.lt(end)` 排除次日 0 点后；`days` 滚动窗口兜底（40 天前排除） |
+| **delete** | 删指定 `_id` → `removed:1`；缺 `_id` → `MISSING_ID` |
+| **summary** | 今日/本月 income/expense 带符号（expense 负 income 正）；未知 action → `UNKNOWN_ACTION` |
+| **stats 聚合** | 按分类聚合（餐饮 -80 / 交通 -20）；净=收入+支出；`byCategory` 按绝对值排序；指定分类只返该分类；owner 隔离（他人 0 笔） |
+| **stats range** | `startDate~endDate` year 模式只统该年（含收入/支出）；between 含两端当天；lastN 由前端算区间、云函数只认区间边界含 endDate 当天 23:59:59；range 下 owner 隔离仍生效 |
+| **端到端 T3** | `午饭花了38块`→解析→add 落库→list 能查到；`收到工资8000`→income；闲聊→不触发记账、库不新增 |
+
+#### B. 端侧正则 `parseExpense` / `parseQuery`（node:test · `parseExpense.test.js` + Jest `PQ`）
+| 边界 | 覆盖点 |
+|---|---|
+| **基础消费识别** | `午饭38块`→餐饮 -38；`打车45`→交通 -45；`买衣服200元`→购物 -200；`收到工资8000`→收入 +8000 |
+| **无金额/无意图** | `今天天气不错`→null；`我的幸运数字是7`→null（不误记） |
+| **品牌词无单位** | `滴滴17.7`、`taxi 17.7`（中英混合）→交通 -17.7；纯 `滴滴` / `滴滴abc` / 裸 `17.7`→null（不误触） |
+| **多笔解析** | `午饭38，滴滴17.7`→两笔（餐饮+交通）；`滴滴17.7 打车25.5`→两笔交通 |
+| **查询意图 PQ** | 本月→month；今年/去年/指定年→range/year；最近30天/近一周→range/lastN；上半年/1月到6月→range/between；含金额（"午饭花了38块"）→null（是记账不是查询）；闲聊→null |
+| **B1 误记防护** | **应记**：`奖金500`/`午饭38`/`早餐25`/`发工资100`/`工资100`/`分红2000`（类目词/收入词即意图，无单位也记）；**不记**：`墙高3块砖`/`股价跌了5块`/`第3名奖金`/`房间38度`/`离终点2公里`/`我身高180`/`第38名`（排名/温度/尺寸/裸数字/量词组合一律 null） |
+
+#### C. 意图路由 `classifyIntent`（Jest · `extractByModel.test.js`）
+| 边界 | 覆盖点 |
+|---|---|
+| **模型输出解析** | 裸 JSON；` ```json ``` ` 代码块包裹；收入正数；query 本月/分类/breakdown |
+| **JSON 容错** | 杂讯里抠第一个 `{..}`；多行 JSON 含换行；空串/null/undefined→null |
+| **validateRecord** | 金额超 `MAX_ABS_AMOUNT=1e7`/零/NaN→退化 chat；`amount:null`→被动填槽 |
+| **白名单校验** | 非法 category→回退「其他」；非法 query type→回退 month |
+
+#### D. 拍照 OCR（`photoAccount.test.js` + `parseOcr.test.js`）
+| 边界 | 覆盖点 |
+|---|---|
+| **OCR 全流程 A2** | 拍照→uploadFile→callFunction(ocr)→**确认弹窗出现但暂不记账**（add 未被调）；用户确认→`onOcrConfirm`→doAdd 被调且金额/类别/商家正确、对话流出现 `[已记]` |
+| **OCR 失败分支** | 识别失败→弹窗不出现 / toast 提示，绝不假成功静默入库（见 gotcha #8） |
+| **parseOcrResponse 容错** | 正常 JSON；` ```json ``` ` 剥离；非法 category→「其他」；`amount` 为字符串/缺失→null（触发手动补）；merchant 缺失→空串；多行 JSON |
+| **⚠️ 模型配置守卫** | `index.js` 必须含 `qwen3.5-plus`、**禁止** `hunyuan-2.0-instruct` / `hunyuan-exp`（纯文本会视觉幻觉）；必须支持 base64 data-URL 直传 |
+
+#### E. 其他纯函数（node:test）
+- `dateRange.test.js`：`computeCurrentMonthDays()` 边界
+- `deleteResult.test.js`：`checkDeleteResult()` 三态（ok / not-found / fail）
+- `fallbackHint.test.js`：模型失败时的反问/万能提示
+
+> **统计口径红线**：所有"月/年"边界测试都按**北京时间**构造（`TZ_OFFSET=8h`）。改 `toUtcMidnight` / `list` / `stats` 后必跑 `miaojiRecord.test.js` 的月边界 + range 套件，确认"本月支出"不为 0、跨年/跨月不串数据。
+
+---
 
 ## 6. 部署流程
 
@@ -306,4 +359,4 @@ node ci-tools/compile.js upload
 
 ---
 
-**最后更新**：2026-08-02（由 agent 基于实际代码 + README + GOTCHAS 整理，覆盖文件职责/编码习惯/测试/部署/常见任务）
+**最后更新**：2026-08-02（由 agent 基于实际代码 + README + GOTCHAS 整理，覆盖文件职责/编码习惯/测试/部署/常见任务；§5.5 新增"已覆盖测试用例边界"清单）
