@@ -4,7 +4,11 @@
     "pages/chatBot/chatBot",
     "pages/guide/guide",
     "pages/profile/profile",
-    "pages/records/records"
+    "pages/records/records",
+    "pages/travelList/travelList",
+    "pages/tripDetail/tripDetail",
+    "pages/journalEdit/journalEdit",
+    "pages/tripEdit/tripEdit"
   ],
   "usingComponents": {
     "custom-map": "/components/toolCard/map/index",

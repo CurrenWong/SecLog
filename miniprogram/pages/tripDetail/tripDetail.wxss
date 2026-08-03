@@ -1,0 +1,198 @@
+.page {
+  padding: 24rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f7f8fa;
+  padding-bottom: 120rpx;
+}
+
+/* 旅程头部 */
+.trip-header {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 20rpx;
+  padding: 32rpx;
+  margin-bottom: 32rpx;
+  color: #fff;
+}
+
+.trip-title {
+  font-size: 40rpx;
+  font-weight: 700;
+  margin-bottom: 12rpx;
+}
+
+.trip-date {
+  font-size: 24rpx;
+  opacity: 0.9;
+  margin-bottom: 8rpx;
+}
+
+.trip-location {
+  font-size: 24rpx;
+  opacity: 0.9;
+  margin-bottom: 8rpx;
+}
+
+.trip-summary {
+  font-size: 26rpx;
+  opacity: 0.85;
+  margin: 12rpx 0;
+  line-height: 1.5;
+}
+
+.trip-stats {
+  font-size: 22rpx;
+  opacity: 0.8;
+  margin-bottom: 20rpx;
+}
+
+.header-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.btn {
+  padding: 10rpx 24rpx;
+  border-radius: 30rpx;
+  font-size: 24rpx;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.btn.danger {
+  background: rgba(255, 80, 80, 0.3);
+}
+
+/* 加载 & 空状态 */
+.loading, .empty {
+  text-align: center;
+  padding: 120rpx 0;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.empty-text {
+  font-size: 32rpx;
+  color: #999;
+}
+
+.empty-hint {
+  font-size: 24rpx;
+  color: #bbb;
+  margin-top: 12rpx;
+}
+
+/* 时间线 */
+.timeline {
+  max-height: calc(100vh - 320rpx);
+}
+
+.timeline-day {
+  display: flex;
+  position: relative;
+  padding-left: 40rpx;
+  margin-bottom: 24rpx;
+}
+
+/* 时间线竖线 */
+.timeline-day::before {
+  content: '';
+  position: absolute;
+  left: 14rpx;
+  top: 28rpx;
+  bottom: -24rpx;
+  width: 4rpx;
+  background: #e0e0e0;
+}
+
+.timeline-day:last-child::before {
+  display: none;
+}
+
+.timeline-node {
+  position: absolute;
+  left: 0;
+  top: 12rpx;
+  width: 32rpx;
+  height: 32rpx;
+  border-radius: 50%;
+  background: #667eea;
+  border: 4rpx solid #fff;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+  z-index: 1;
+}
+
+/* 日记卡片 */
+.journal-card {
+  flex: 1;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.04);
+}
+
+.journal-date {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.day-label {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.date-label {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.time-label {
+  font-size: 22rpx;
+  color: #bbb;
+}
+
+.journal-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.journal-location {
+  font-size: 24rpx;
+  color: #07c160;
+  margin-bottom: 8rpx;
+}
+
+.journal-content {
+  font-size: 26rpx;
+  color: #555;
+  line-height: 1.6;
+}
+
+/* 照片网格 */
+.photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 12rpx;
+}
+
+.photo {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 8rpx;
+}
+
+/* 底部 */
+.timeline-end {
+  text-align: center;
+  padding: 32rpx 0 0 40rpx;
+  font-size: 24rpx;
+  color: #ccc;
+}

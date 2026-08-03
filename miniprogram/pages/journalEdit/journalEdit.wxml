@@ -1,0 +1,96 @@
+<view class="page">
+  <!-- 选择旅程（快速记录模式时显示） -->
+  <view class="field" wx:if="{{mode === 'quick'}}">
+    <view class="label">所属旅程</view>
+    <picker bindchange="onTripChange" range="{{tripOptions}}" range-key="title" value="{{tripIndex}}">
+      <view class="picker">{{tripPickerText}}</view>
+    </picker>
+  </view>
+
+  <!-- 固定旅程（已指定时） -->
+  <view class="field" wx:if="{{mode !== 'quick' && trip.title}}">
+    <view class="label">旅程</view>
+    <view class="picker readonly">{{trip.title}}</view>
+  </view>
+
+  <!-- 日期 -->
+  <view class="field">
+    <view class="label">日期</view>
+    <picker mode="date" value="{{date}}" bindchange="onDateChange">
+      <view class="picker">{{date}}</view>
+    </picker>
+  </view>
+
+  <!-- 时间 -->
+  <view class="field">
+    <view class="label">时间</view>
+    <picker mode="time" value="{{time}}" bindchange="onTimeChange">
+      <view class="picker">{{time || '选填'}}</view>
+    </picker>
+  </view>
+
+  <!-- Day 第几天 -->
+  <view class="field">
+    <view class="label">第几天</view>
+    <picker mode="selector" range="{{dayOptions}}" value="{{dayIndex}}" bindchange="onDayChange">
+      <view class="picker">Day {{day}}</view>
+    </picker>
+  </view>
+
+  <!-- 标题 -->
+  <view class="field">
+    <view class="label">标题</view>
+    <input class="input" placeholder="今天发生了什么？" value="{{title}}" bindinput="onTitleInput" />
+  </view>
+
+  <!-- 内容输入区 -->
+  <view class="field content-field">
+    <view class="label">内容</view>
+
+    <!-- 语音输入按钮 -->
+    <view class="voice-bar" bind:tap="startVoiceInput">
+      <text class="voice-icon">🎤</text>
+      <text class="voice-text">点击说话</text>
+    </view>
+
+    <textarea
+      class="textarea"
+      placeholder="记录此刻的心情和见闻…"
+      value="{{content}}"
+      bindinput="onContentInput"
+      auto-height
+    />
+  </view>
+
+  <!-- 地点选择（推荐方案：使用 wx.chooseLocation 地图选点） -->
+  <view class="field">
+    <view class="label">地点</view>
+    <view class="location-row" bind:tap="chooseLocation">
+      <view class="location-text">
+        <text wx:if="{{location}}">{{location.name}}</text>
+        <text wx:else class="placeholder">点击选择地点（支持导航）</text>
+      </view>
+      <text class="location-icon">📍</text>
+    </view>
+    <view class="location-coords" wx:if="{{location && location.latitude}}">
+      坐标: {{location.latitude}}, {{location.longitude}}
+    </view>
+  </view>
+
+  <!-- 照片 -->
+  <view class="field">
+    <view class="label">照片</view>
+    <view class="photos">
+      <view class="photo-item" wx:for="{{photos}}" wx:key="*this">
+        <image src="{{item}}" mode="aspectFill" />
+        <view class="photo-del" bind:tap="removePhoto" data-index="{{index}}">✕</view>
+      </view>
+      <view class="photo-add" bind:tap="addPhoto" wx:if="{{photos.length < 9}}">
+        <text>+</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 保存按钮 -->
+  <view class="save-btn" bind:tap="save">保存日记</view>
+</view>

@@ -93,6 +93,10 @@ Page({
     wx.navigateTo({ url: '/pages/guide/guide' })
   },
 
+  goTravel() {
+    wx.navigateTo({ url: '/pages/travelList/travelList' })
+  },
+
   goProfile() {
     wx.navigateTo({ url: '/pages/profile/profile' })
   },

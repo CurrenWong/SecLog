@@ -1,0 +1,10 @@
+{
+  "name": "travelRecord",
+  "version": "1.0.0",
+  "description": "旅游记录云函数：旅程/日记的增删查改 + 语音转文字 + 自然语言解析",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "4.0.2",
+    "@cloudbase/node-sdk": ">=3.16.0"
+  }
+}

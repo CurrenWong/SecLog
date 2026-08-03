@@ -237,3 +237,40 @@
   color: #07c160;
   padding: 20rpx;
 }
+
+/* 旅游记录入口 */
+.travel-entry {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 20rpx;
+  padding: 28rpx 32rpx;
+  margin-bottom: 32rpx;
+  box-shadow: 0 6rpx 20rpx rgba(102, 126, 234, 0.3);
+}
+
+.travel-entry-icon {
+  font-size: 52rpx;
+  margin-right: 20rpx;
+}
+
+.travel-entry-text {
+  flex: 1;
+}
+
+.travel-entry-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #fff;
+}
+
+.travel-entry-sub {
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.85);
+  margin-top: 4rpx;
+}
+
+.travel-entry-arrow {
+  font-size: 48rpx;
+  color: rgba(255, 255, 255, 0.9);
+}

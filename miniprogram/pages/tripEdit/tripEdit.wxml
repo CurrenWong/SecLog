@@ -1,0 +1,56 @@
+<view class="page">
+  <view class="field">
+    <view class="label">旅程标题 *</view>
+    <input class="input" placeholder="例如：北京七日游" value="{{title}}" bindinput="onTitleInput" />
+  </view>
+
+  <view class="field">
+    <view class="label">开始日期 *</view>
+    <picker mode="date" value="{{startDate}}" bindchange="onStartDateChange">
+      <view class="picker">{{startDate}}</view>
+    </picker>
+  </view>
+
+  <view class="field">
+    <view class="label">结束日期 *</view>
+    <picker mode="date" value="{{endDate}}" bindchange="onEndDateChange">
+      <view class="picker">{{endDate}}</view>
+    </picker>
+  </view>
+
+  <view class="field">
+    <view class="label">目的地</view>
+    <view class="location-row" bind:tap="chooseLocation">
+      <view class="location-text">
+        <text wx:if="{{location}}">{{location.name}}</text>
+        <text wx:else class="placeholder">点击选择地点（支持导航）</text>
+      </view>
+      <text class="location-icon">📍</text>
+    </view>
+  </view>
+
+  <view class="field">
+    <view class="label">封面</view>
+    <view class="cover-preview" wx:if="{{cover}}" bind:tap="chooseCover">
+      <image src="{{cover}}" mode="aspectFill" />
+      <view class="cover-del" bind:tap="removeCover">✕</view>
+    </view>
+    <view class="cover-choose" wx:else bind:tap="chooseCover">
+      <text>+</text>
+      <text class="cover-hint">选择封面图片</text>
+    </view>
+  </view>
+
+  <view class="field">
+    <view class="label">简介</view>
+    <textarea
+      class="textarea"
+      placeholder="一段简短的旅途介绍…"
+      value="{{summary}}"
+      bindinput="onSummaryInput"
+      auto-height
+    />
+  </view>
+
+  <view class="save-btn" bind:tap="save">{{isEdit ? '保存修改' : '创建旅程'}}</view>
+</view>

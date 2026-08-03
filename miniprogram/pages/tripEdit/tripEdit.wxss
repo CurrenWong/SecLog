@@ -1,0 +1,130 @@
+.page {
+  padding: 24rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f7f8fa;
+  padding-bottom: 120rpx;
+}
+
+.field {
+  margin-bottom: 28rpx;
+}
+
+.label {
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 10rpx;
+  font-weight: 500;
+}
+
+.picker, .input {
+  background: #fff;
+  border-radius: 12rpx;
+  padding: 24rpx;
+  font-size: 28rpx;
+  color: #333;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120rpx;
+  background: #fff;
+  border-radius: 12rpx;
+  padding: 24rpx;
+  font-size: 28rpx;
+  color: #333;
+  line-height: 1.6;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+/* 地点选择 */
+.location-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  border-radius: 12rpx;
+  padding: 24rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.location-text {
+  flex: 1;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.location-text .placeholder {
+  color: #bbb;
+}
+
+.location-icon {
+  font-size: 36rpx;
+}
+
+/* 封面 */
+.cover-preview {
+  width: 100%;
+  height: 300rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+  position: relative;
+}
+
+.cover-preview image {
+  width: 100%;
+  height: 100%;
+}
+
+.cover-del {
+  position: absolute;
+  top: 12rpx;
+  right: 12rpx;
+  width: 48rpx;
+  height: 48rpx;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border-radius: 50%;
+  text-align: center;
+  line-height: 48rpx;
+  font-size: 28rpx;
+}
+
+.cover-choose {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200rpx;
+  background: #fff;
+  border: 2rpx dashed #ccc;
+  border-radius: 12rpx;
+  font-size: 60rpx;
+  color: #ccc;
+}
+
+.cover-hint {
+  font-size: 26rpx;
+  color: #bbb;
+  margin-top: 8rpx;
+}
+
+/* 保存按钮 */
+.save-btn {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  text-align: center;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-top: 20rpx;
+  box-shadow: 0 6rpx 20rpx rgba(102, 126, 234, 0.3);
+}

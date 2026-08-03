@@ -1,0 +1,74 @@
+<view class="page">
+  <!-- 旅程头部 -->
+  <view class="trip-header">
+    <view class="trip-title">{{trip.title}}</view>
+    <view class="trip-date">{{trip.startDate}} ~ {{trip.endDate}}</view>
+    <view class="trip-location" wx:if="{{trip.location}}">📍 {{trip.location}}</view>
+    <view class="trip-summary" wx:if="{{trip.summary}}">{{trip.summary}}</view>
+    <view class="trip-stats">
+      <text>{{trip.entryCount || 0}} 篇日记</text>
+      <text wx:if="{{trip.photoCount > 0}}"> · {{trip.photoCount}} 张照片</text>
+    </view>
+    <view class="header-actions">
+      <view class="btn" bind:tap="addJournal">📝 写日记</view>
+      <view class="btn" bind:tap="editTrip">✏️ 编辑</view>
+      <view class="btn danger" bind:tap="deleteTrip">🗑 删除</view>
+    </view>
+  </view>
+
+  <!-- 加载 -->
+  <view wx:if="{{loading}}" class="loading">加载中…</view>
+
+  <!-- 空日记 -->
+  <view wx:elif="{{journals.length === 0}}" class="empty">
+    <view class="empty-icon">📖</view>
+    <view class="empty-text">还没有日记</view>
+    <view class="empty-hint">点击「写日记」记录旅途中的点滴</view>
+  </view>
+
+  <!-- 时间线 -->
+  <scroll-view wx:else class="timeline" scroll-y enable-back-to-top>
+    <view class="timeline-day" wx:for="{{journals}}" wx:for-item="j" wx:key="_id">
+      <!-- 时间线节点 -->
+      <view class="timeline-node"></view>
+
+      <view class="journal-card" bind:tap="editJournal" data-id="{{j._id}}">
+        <!-- 日期标 -->
+        <view class="journal-date">
+          <text class="day-label">Day {{j.day}}</text>
+          <text class="date-label">{{j.date}}</text>
+          <text class="time-label" wx:if="{{j.time}}">{{j.time}}</text>
+        </view>
+
+        <!-- 标题 -->
+        <view class="journal-title" wx:if="{{j.title}}">{{j.title}}</view>
+
+        <!-- 地点 -->
+        <view class="journal-location" wx:if="{{j.location}}">
+          📍 {{j.location.name || j.location}}
+        </view>
+
+        <!-- 内容 -->
+        <view class="journal-content">{{j.content}}</view>
+
+        <!-- 照片网格 -->
+        <view class="photo-grid" wx:if="{{j.photos && j.photos.length > 0}}">
+          <image
+            wx:for="{{j.photos}}"
+            wx:key="*this"
+            class="photo"
+            src="{{item}}"
+            mode="aspectFill"
+            bind:tap="previewPhoto"
+            data-url="{{item}}"
+          />
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部留白 -->
+    <view class="timeline-end">
+      <text>旅途还在继续…</text>
+    </view>
+  </scroll-view>
+</view>

@@ -32,6 +32,16 @@
     <view class="cta-arrow">></view>
   </view>
 
+  <!-- 旅游记录入口 -->
+  <view class="travel-entry" bind:tap="goTravel">
+    <view class="travel-entry-icon">🧳</view>
+    <view class="travel-entry-text">
+      <view class="travel-entry-title">旅途记录</view>
+      <view class="travel-entry-sub">记录每一次出发，珍藏每一段旅程</view>
+    </view>
+    <view class="travel-entry-arrow">></view>
+  </view>
+
   <!-- 最近记录 -->
   <view class="recent">
     <view class="recent-head">

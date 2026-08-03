@@ -1,0 +1,48 @@
+<view class="page">
+  <!-- 顶部操作栏 -->
+  <view class="top-bar">
+    <view class="title">我的旅途</view>
+    <view class="actions">
+      <view class="btn-speech" bind:tap="goQuickRecord">
+        <text class="icon">🎤</text>
+        <text>快速记录</text>
+      </view>
+      <view class="btn-new" bind:tap="goNewTrip">
+        <text class="icon">✚</text>
+        <text>新建旅程</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 加载状态 -->
+  <view wx:if="{{loading}}" class="loading">加载中…</view>
+
+  <!-- 空状态 -->
+  <view wx:elif="{{trips.length === 0}}" class="empty">
+    <view class="empty-icon">🧳</view>
+    <view class="empty-text">还没有旅途记录</view>
+    <view class="empty-hint">点击「新建旅程」记录你的每一次出发</view>
+  </view>
+
+  <!-- 旅程列表 -->
+  <scroll-view wx:else class="trip-list" scroll-y enable-back-to-top>
+    <view class="trip-card" wx:for="{{trips}}" wx:key="_id" bind:tap="goTrip" data-id="{{item._id}}">
+      <view class="trip-cover" wx:if="{{item.cover}}">
+        <image src="{{item.cover}}" mode="aspectFill" />
+      </view>
+      <view class="trip-body">
+        <view class="trip-title">{{item.title}}</view>
+        <view class="trip-meta">
+          <text>{{item.startDate}} ~ {{item.endDate}}</text>
+          <text wx:if="{{item.location}}"> · {{item.location}}</text>
+        </view>
+        <view class="trip-stats">
+          <text class="stat">{{item.entryCount || 0}} 篇日记</text>
+          <text class="stat" wx:if="{{item.photoCount > 0}}">{{item.photoCount}} 张照片</text>
+        </view>
+        <view class="trip-summary" wx:if="{{item.summary}}">{{item.summary}}</view>
+      </view>
+      <view class="trip-arrow">›</view>
+    </view>
+  </scroll-view>
+</view>

@@ -359,4 +359,80 @@ node ci-tools/compile.js upload
 
 ---
 
-**最后更新**：2026-08-02（由 agent 基于实际代码 + README + GOTCHAS 整理，覆盖文件职责/编码习惯/测试/部署/常见任务；§5.5 新增"已覆盖测试用例边界"清单）
+## 10. 旅游记录模块（travelRecord）
+
+> 独立于记账模块，代码/数据/云函数全隔离，不互相影响。
+
+### 10.1 数据模型
+
+| 集合 | 说明 | 关键字段 |
+|---|---|---|
+| `trips` | 旅程 | `_openid`, `title`, `startDate`, `endDate`, `location`, `cover`, `summary`, `entryCount`, `photoCount`, `createdAt` |
+| `trip_journals` | 日记 | `_openid`, `tripId`, `day`, `date`, `time`, `title`, `location`(含 `lat/lng` 坐标), `content`, `photos[]`, `createdAt` |
+
+索引：`trips` = `(_openid, createdAt desc)`；`trip_journals` = `(_openid, tripId, day asc, time asc)`。
+
+### 10.2 云函数 `travelRecord`
+
+**独立函数**，不依赖 `miaojiRecord` 的任何代码。
+- `functionRootPath`: `cloudfunctions/` → 自动识别 `travelRecord/` 子目录
+- 入口：`index.main`，按 `event.action` 分发
+
+| action | 参数 | 说明 |
+|---|---|---|
+| `createTrip` | `title, startDate, endDate, cover, location, summary` | 创建旅程 |
+| `updateTrip` | `tripId, title, cover, startDate, endDate, location, summary` | 更新旅程 |
+| `deleteTrip` | `tripId` | 删除旅程（级联删除所有日记） |
+| `listTrips` | `page, limit` | 旅程列表（倒序） |
+| `getTrip` | `tripId` | 旅程详情 + 所有日记（按 day/time 正序） |
+| `addJournal` | `tripId, day, date, time, title, location, content, photos` | 新增日记（自动更新旅程 entryCount/photoCount） |
+| `updateJournal` | `journalId, day, date, time, title, location, content, photos` | 更新日记 |
+| `deleteJournal` | `journalId` | 删除日记（自动更新旅程统计） |
+| `listJournals` | `tripId, sort` | 获取旅程的所有日记 |
+| `parseNaturalLanguage` | `text` | AI 自然语言解析（deepseek-v4-flash），提取日期/时间/标题/地点/内容 |
+
+### 10.3 前端页面（独立于记账页）
+
+| 页面 | 文件名 | 职责 |
+|---|---|---|
+| 旅程列表 | `pages/travelList/` | 主页入口，展示所有旅程卡片 |
+| 旅程详情 | `pages/tripDetail/` | 时间线视图，按 Day 分组展示日记 |
+| 日记编辑 | `pages/journalEdit/` | 语音输入/文字/照片/地图选点(含坐标) |
+| 旅程编辑 | `pages/tripEdit/` | 新建/编辑旅程基本信息 |
+
+### 10.4 首页入口
+
+在 `pages/index/index.wxml` 的 CTA 记账按钮和最近记录之间，插入独立的紫色渐变卡片「🧳 旅途记录」。点击 → `navigateTo` 跳转 `travelList`，不走记账路由。
+
+### 10.5 地点方案（推荐）
+
+使用微信原生 API `wx.chooseLocation()`：
+- **地图选点**：用户在地图上选点或搜索，返回 `name/address/latitude/longitude`
+- **坐标持久化**：日记的 `location` 字段存 `{name, address, latitude, longitude}`
+- **导航跳转**：后续可调用 `wx.openLocation({latitude, longitude})` 直接跳转地图APP导航
+- **无需额外配置**：小程序基础库自带，无需引入第三方SDK
+
+### 10.6 语音输入
+
+使用已配置的 WechatSI 插件（`app.json` 已注册 `WX_PROVIDER_APPID_PLACEHOLDER`）：
+- 前端 `plugin.getRecordRecognitionManager()` 录音 → 转文字
+- 通过 `parseNaturalLanguage` 云函数 AI 解析（deepseek-v4-flash）
+- 解析结果自动填充日期/时间/标题/地点/内容各字段
+
+### 10.7 部署
+
+```bash
+# 云函数首次部署已在 MCP 完成
+# 后续更新代码后：
+# CloudBase MCP → manageFunctions(updateFunctionCode, functionRootPath=cloudfunctions, functionName=travelRecord)
+
+# 前端更新后：
+# 编译上传：node ci-tools/compile.js upload
+```
+
+### 10.8 注意事项
+
+- 照片上传到云存储 `travel/` 路径，与 `miaojiRecord` 的 `ocr_tmp/`、`avatars/` 互不干扰
+- 日记的 `day` 字段自动根据旅程 `startDate` 计算，也可手动调整
+- 快速记录模式（`mode=quick`）无需先建旅程，系统自动创建名为「{地点名}之旅」的旅程
+- 无 `travelRecord` 相关 Jest 测试用例（TODO：后续可加）
