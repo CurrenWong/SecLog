@@ -1,4 +1,31 @@
 <view class="page">
+  <!-- ⭐ 智能输入（自然语言一键解析） -->
+  <view class="ai-card">
+    <view class="ai-header">
+      <text class="ai-title">🤖 智能输入</text>
+      <text class="ai-subtitle">说一句话，自动填好所有字段</text>
+    </view>
+    <view class="ai-input-row">
+      <input
+        class="ai-input"
+        placeholder="例如：昨天下午去了故宫…"
+        value="{{aiInputText}}"
+        bindinput="onAiInputChange"
+        bindconfirm="onAiInputConfirm"
+        confirm-type="send"
+      />
+      <view class="ai-send" bind:tap="onAiInputConfirm">
+        <text>↵</text>
+      </view>
+      <view class="ai-voice" bind:tap="startVoiceInput">
+        <text>🎤</text>
+      </view>
+    </view>
+    <view class="ai-hint" wx:if="{{aiLoading}}">
+      <text>🤔 正在解析…</text>
+    </view>
+  </view>
+
   <!-- 选择旅程（快速记录模式时显示） -->
   <view class="field" wx:if="{{mode === 'quick'}}">
     <view class="label">所属旅程</view>

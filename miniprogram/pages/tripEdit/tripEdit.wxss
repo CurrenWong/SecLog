@@ -29,6 +29,8 @@
 .input {
   width: 100%;
   box-sizing: border-box;
+  line-height: 2.4;
+  min-height: 88rpx;
 }
 
 .textarea {
@@ -40,7 +42,7 @@
   padding: 24rpx;
   font-size: 28rpx;
   color: #333;
-  line-height: 1.6;
+  line-height: 2.4;
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
 }
 

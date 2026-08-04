@@ -6,6 +6,78 @@
   padding-bottom: 120rpx;
 }
 
+/* ⭐ 智能输入卡片 */
+.ai-card {
+  background: linear-gradient(135deg, #e3f2fd 0%, #e8f5e9 100%);
+  border-radius: 20rpx;
+  padding: 28rpx;
+  margin-bottom: 32rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.ai-header {
+  margin-bottom: 20rpx;
+}
+
+.ai-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.ai-subtitle {
+  font-size: 24rpx;
+  color: #888;
+  margin-left: 12rpx;
+}
+
+.ai-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  background: #fff;
+  border-radius: 50rpx;
+  padding: 6rpx 6rpx 6rpx 28rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+}
+
+.ai-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #333;
+  height: 72rpx;
+  line-height: 72rpx;
+  min-height: 72rpx;
+}
+
+.ai-send, .ai-voice {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  flex-shrink: 0;
+}
+
+.ai-send {
+  background: #667eea;
+  color: #fff;
+}
+
+.ai-voice {
+  background: #e8f5e9;
+  font-size: 36rpx;
+}
+
+.ai-hint {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: #666;
+  text-align: center;
+}
+
 .field {
   margin-bottom: 28rpx;
 }
@@ -34,6 +106,8 @@
 .input {
   width: 100%;
   box-sizing: border-box;
+  line-height: 2.4;
+  min-height: 88rpx;
 }
 
 /* 语音输入 */
@@ -67,7 +141,7 @@
   padding: 24rpx;
   font-size: 28rpx;
   color: #333;
-  line-height: 1.6;
+  line-height: 2.4;
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
 }
 

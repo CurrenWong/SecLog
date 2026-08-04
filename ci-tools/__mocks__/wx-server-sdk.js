@@ -67,7 +67,13 @@ function makeQuery() {
       for (const w of state.wheres) rows = rows.filter((r) => matchWhere(r, w))
       let updated = 0
       for (const r of rows) {
-        Object.assign(r, data) // 只更新传入字段
+        for (const [k, v] of Object.entries(data)) {
+          if (v && typeof v === 'object' && v.$inc !== undefined) {
+            r[k] = (r[k] || 0) + v.$inc
+          } else {
+            r[k] = v
+          }
+        }
         updated++
       }
       return { stats: { updated } }
@@ -102,6 +108,32 @@ const db = {
         store.push(Object.assign({ _id }, data))
         return { _id }
       },
+      doc(id) {
+        return {
+          async remove() {
+            const idx = store.findIndex((r) => r._id === id)
+            if (idx >= 0) store.splice(idx, 1)
+            return { stats: { removed: idx >= 0 ? 1 : 0 } }
+          },
+          async get() {
+            const row = store.find((r) => r._id === id)
+            return { data: row ? [row] : [] }
+          },
+          async update({ data }) {
+            const row = store.find((r) => r._id === id)
+            if (row) {
+              for (const [k, v] of Object.entries(data)) {
+                if (v && typeof v === 'object' && v.$inc !== undefined) {
+                  row[k] = (row[k] || 0) + v.$inc
+                } else {
+                  row[k] = v
+                }
+              }
+            }
+            return { stats: { updated: row ? 1 : 0 } }
+          },
+        }
+      },
       where(cond) { return makeQuery().where(cond) },
       orderBy(f, d) { return makeQuery().orderBy(f, d) },
       limit(n) { return makeQuery().limit(n) },
@@ -119,6 +151,7 @@ const db = {
     lte: (v) => makeCommand({ $lte: v }),
     eq: (v) => makeCommand({ $eq: v }),
     neq: (v) => makeCommand({ $neq: v }),
+    inc: (v) => makeCommand({ $inc: v }),
   },
 }
 

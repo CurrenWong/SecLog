@@ -26,6 +26,10 @@ Page({
     location: null,
     photos: [],
 
+    // 智能输入
+    aiInputText: '',
+    aiLoading: false,
+
     // 语音
     _recording: false,
     _manager: null,
@@ -126,6 +130,21 @@ Page({
     })
   },
 
+  // ========== 智能输入（自然语言 → 结构化） ==========
+  onAiInputChange(e) {
+    this.setData({ aiInputText: e.detail.value })
+  },
+
+  onAiInputConfirm() {
+    const text = this.data.aiInputText.trim()
+    if (!text) {
+      wx.showToast({ title: '请输入内容', icon: 'none' })
+      return
+    }
+    this.setData({ aiLoading: true })
+    this.nlpParse(text)
+  },
+
   // ========== 语音输入 ==========
   startVoiceInput() {
     wx.showModal({
@@ -152,22 +171,35 @@ Page({
     this.setData({ content: text })
 
     // 尝试 AI 解析
+    const callParams = { action: 'parseNaturalLanguage', text }
+    if (this.data.trip && this.data.trip.startDate) {
+      callParams.tripStartDate = this.data.trip.startDate
+      callParams.tripEndDate = this.data.trip.endDate
+    }
     wx.cloud.callFunction({
       name: 'travelRecord',
-      data: { action: 'parseNaturalLanguage', text },
+      data: callParams,
     }).then((res) => {
+      this.setData({ aiLoading: false })
       if (res.result && res.result.success && res.result.parsed) {
         const p = res.result.parsed
         const updates = {}
-        if (p.date) updates.date = p.date
-        if (p.time) updates.time = p.time
-        if (p.title) updates.title = p.title
-        if (p.location && p.location.name) updates.location = { name: p.location.name }
-        if (p.content) updates.content = p.content
-        wx.showToast({ title: '已识别', icon: 'success' })
+        // 全量覆盖：AI 返回什么就填什么，没返回的字段清空
+        updates.date = p.date || ''
+        updates.time = p.time || ''
+        updates.title = p.title || (p.location && p.location.name) || text.slice(0, 12) || ''
+        updates.location = p.location && p.location.name
+          ? { name: p.location.name }
+          : { name: '' }
+        updates.content = p.content || text
+        updates.aiInputText = ''
+        wx.showToast({ title: '✅ 已识别并填好', icon: 'none' })
         this.setData(updates)
+        // 自动更新 day
+        this.updateDayFromDate()
       }
     }).catch(() => {
+      this.setData({ aiLoading: false })
       // NLP 失败，保留原文
     })
   },
@@ -355,7 +387,8 @@ Page({
     if (!localPhotos || localPhotos.length === 0) return Promise.resolve([])
 
     const uploads = localPhotos.map((path, i) => {
-      const ext = path.match(/\.(\w+)$/)?.[1] || 'jpg'
+      const m = path.match(/\.(\w+)$/)
+      const ext = (m && m[1]) || 'jpg'
       const cloudPath = `travel/${Date.now()}_${i}.${ext}`
       return wx.cloud.uploadFile({
         cloudPath,

@@ -1089,7 +1089,8 @@ Page({
     this.setData({ 'ocrResult.merchant': e.detail.value })
   },
   onOcrCategoryChange(e) {
-    this.setData({ 'ocrResult.category': e.detail.value })
+    const categories = ['餐饮','交通','购物','居家','医疗','娱乐','教育','其他']
+    this.setData({ 'ocrResult.category': categories[e.detail.value] || '其他' })
   },
   // 收入/支出切换（默认支出，用户在确认弹窗可改）
   onOcrTypeChange(e) {

@@ -149,14 +149,21 @@ async function addJournal({ tripId, day, date, time, title, location, content, p
   const res = await db.collection(JOURNALS).add({ data })
 
   // 更新旅程的 entryCount 和 photoCount
-  const photoCount = (photos || []).length
-  await db.collection(TRIPS).where({ _id: tripId }).update({
-    data: {
-      entryCount: _.inc(1),
-      photoCount: _.inc(photoCount),
-      updatedAt: now,
-    },
-  })
+  try {
+    const photoCount = (photos || []).length
+    await db.collection(TRIPS).where({ _id: tripId, _openid: openid }).update({
+      data: {
+        entryCount: _.inc(1),
+        photoCount: _.inc(photoCount),
+        updatedAt: now,
+      },
+    })
+  } catch (updateErr) {
+    // 如果 TRIPS 更新失败，回滚刚创建的日记
+    console.error('addJournal trip update error, rolling back journal:', updateErr)
+    await db.collection(JOURNALS).doc(res._id).remove().catch(() => {})
+    return { success: false, error: '更新旅程统计失败: ' + updateErr.message }
+  }
 
   return { success: true, journalId: res._id }
 }
@@ -175,7 +182,12 @@ async function updateJournal({ journalId, day, date, time, title, location, cont
   if (content !== undefined) updateData.content = content
   if (photos !== undefined) updateData.photos = photos
 
-  await db.collection(JOURNALS).where({ _id: journalId, ...filter }).update({ data: updateData })
+  try {
+    await db.collection(JOURNALS).where({ _id: journalId, ...filter }).update({ data: updateData })
+  } catch (err) {
+    console.error('updateJournal db error:', err, 'updateData keys:', Object.keys(updateData))
+    return { success: false, error: '更新日记失败: ' + err.message }
+  }
   return { success: true }
 }
 
@@ -193,7 +205,7 @@ async function deleteJournal({ journalId }) {
   await db.collection(JOURNALS).where({ _id: journalId, ...filter }).remove()
 
   // 更新旅程统计
-  await db.collection(TRIPS).where({ _id: journal.tripId }).update({
+  await db.collection(TRIPS).where({ _id: journal.tripId, _openid: getOpenid() }).update({
     data: {
       entryCount: _.inc(-1),
       photoCount: _.inc(-(journal.photos || []).length),
@@ -227,35 +239,52 @@ async function parseNaturalLanguage({ text, tripStartDate, tripEndDate }) {
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 
+  // 旅程上下文（如果有）
+  let tripContext = ''
+  if (tripStartDate) {
+    tripContext = `\n旅程范围：${tripStartDate} ~ ${tripEndDate || '至今'}`
+  }
+
   const prompt = `你是一个旅游日记的 NLP 解析助手。请将用户输入的日常语言解析为结构化数据。
 
 输入示例：
-- "今天八点去了故宫"
-- "昨天晚上去了夫子庙"
-- "下午三点在颐和园散步"
-- "中午吃烤鸭，180块"
-- "早上七点在天安门看升旗"
+- "今天八点去了故宫" → {"date":"2026-08-04","time":"08:00","title":"游览故宫","location":{"name":"故宫"},"content":"今天八点去了故宫"}
+- "昨天晚上去了夫子庙" → {"date":"2026-08-03","time":"20:00","title":"夜游夫子庙","location":{"name":"夫子庙"},"content":"昨天晚上去了夫子庙"}
+- "下午三点在颐和园散步" → {"date":"2026-08-04","time":"15:00","title":"颐和园散步","location":{"name":"颐和园"},"content":"下午三点在颐和园散步"}
+- "中午吃烤鸭" → {"date":"2026-08-04","time":"12:00","title":"午餐吃烤鸭","content":"中午吃烤鸭"}
+- "早上七点在天安门看升旗" → {"date":"2026-08-04","time":"07:00","title":"天安门看升旗","location":{"name":"天安门"},"content":"早上七点在天安门看升旗"}
 
 输出 JSON 格式（只输出 JSON，不要额外文字）：
 {
   "date": "YYYY-MM-DD",
   "time": "HH:MM",
-  "title": "简短标题",
+  "title": "简短标题（4-12字，从输入内容提取，必填）",
   "location": { "name": "地点名" },
-  "content": "完整描述",
+  "content": "完整描述（保留原文语气）",
   "expense": 0,
   "confidence": 0.95,
   "unparsed": ""
 }
 
+注意：
+- title 必填！从输入内容提取关键词生成，例如"游览故宫"、"夜游夫子庙"
+- 如果用户没说地点，location.name 可以为空
+- 如果用户没说时间，time 可以为空
+- date 必须基于当前参考日期推算
+- content 保留用户原文，不要自己编造${tripContext}
+
 当前参考日期：${todayStr}
 用户输入：${text}`
 
   try {
-    const aiRes = await tcbApp.ai().generateText({
+    const ai = tcbApp.ai()
+    const model = ai.createModel('cloudbase')
+    const result = await model.generateText({
       model: 'deepseek-v4-flash',
-      prompt,
+      messages: [{ role: 'user', content: prompt }],
     })
+
+    const aiRes = result.text
 
     let parsed
     try {

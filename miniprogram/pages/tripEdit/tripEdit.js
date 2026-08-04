@@ -59,6 +59,11 @@ Page({
           },
         })
       },
+      fail: (err) => {
+        if (err.errMsg && err.errMsg.indexOf('cancel') === -1) {
+          wx.showToast({ title: '获取位置失败', icon: 'none' })
+        }
+      },
     })
   },
 
