@@ -15,10 +15,10 @@
         confirm-type="send"
       />
       <view class="ai-send" bind:tap="onAiInputConfirm">
-        <text>↵</text>
+        <text>⚡</text>
       </view>
-      <view class="ai-voice" bind:tap="startVoiceInput">
-        <text>🎤</text>
+      <view class="ai-voice {{_recording ? 'recording' : ''}}" bind:touchstart="onVoiceTouchStart" bind:touchend="onVoiceTouchEnd" bind:touchcancel="onVoiceTouchEnd">
+        <text>{{_recording ? '🔴' : '🎤'}}</text>
       </view>
     </view>
     <view class="ai-hint" wx:if="{{aiLoading}}">
@@ -56,14 +56,6 @@
     </picker>
   </view>
 
-  <!-- Day 第几天 -->
-  <view class="field">
-    <view class="label">第几天</view>
-    <picker mode="selector" range="{{dayOptions}}" value="{{dayIndex}}" bindchange="onDayChange">
-      <view class="picker">Day {{day}}</view>
-    </picker>
-  </view>
-
   <!-- 标题 -->
   <view class="field">
     <view class="label">标题</view>
@@ -74,12 +66,6 @@
   <view class="field content-field">
     <view class="label">内容</view>
 
-    <!-- 语音输入按钮 -->
-    <view class="voice-bar" bind:tap="startVoiceInput">
-      <text class="voice-icon">🎤</text>
-      <text class="voice-text">点击说话</text>
-    </view>
-
     <textarea
       class="textarea"
       placeholder="记录此刻的心情和见闻…"
@@ -89,15 +75,20 @@
     />
   </view>
 
-  <!-- 地点选择（推荐方案：使用 wx.chooseLocation 地图选点） -->
+  <!-- 地点选择 -->
   <view class="field">
     <view class="label">地点</view>
-    <view class="location-row" bind:tap="chooseLocation">
-      <view class="location-text">
-        <text wx:if="{{location}}">{{location.name}}</text>
-        <text wx:else class="placeholder">点击选择地点（支持导航）</text>
+    <view class="location-row">
+      <view class="location-left" bind:tap="chooseLocation">
+        <view class="location-text">
+          <text wx:if="{{location}}">{{location.name}}</text>
+          <text wx:else class="placeholder">点击选择地点（支持导航）</text>
+        </view>
+        <text class="location-icon">📍</text>
       </view>
-      <text class="location-icon">📍</text>
+      <view class="location-view-btn" wx:if="{{location}}" bind:tap="viewLocation">
+        <text>🗺️</text>
+      </view>
     </view>
     <view class="location-coords" wx:if="{{location && location.latitude}}">
       坐标: {{location.latitude}}, {{location.longitude}}

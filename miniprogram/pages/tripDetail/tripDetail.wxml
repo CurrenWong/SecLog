@@ -51,6 +51,12 @@
         <!-- 内容 -->
         <view class="journal-content">{{j.content}}</view>
 
+        <!-- 到下一站距离 -->
+        <view class="journal-distance" wx:if="{{j.distanceToNext}}">
+          <view class="distance-arrow">↓</view>
+          <view class="distance-label">🚗 {{j.distanceToNext.text}}</view>
+        </view>
+
         <!-- 照片网格 -->
         <view class="photo-grid" wx:if="{{j.photos && j.photos.length > 0}}">
           <image

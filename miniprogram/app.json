@@ -8,7 +8,8 @@
     "pages/travelList/travelList",
     "pages/tripDetail/tripDetail",
     "pages/journalEdit/journalEdit",
-    "pages/tripEdit/tripEdit"
+    "pages/tripEdit/tripEdit",
+    "pages/batchJournal/batchJournal"
   ],
   "usingComponents": {
     "custom-map": "/components/toolCard/map/index",

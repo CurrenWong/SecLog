@@ -49,4 +49,9 @@ Page({
   goQuickRecord() {
     wx.navigateTo({ url: '/pages/journalEdit/journalEdit?mode=quick' })
   },
+
+  // 批量记录（多日行程 NLP 自然语言/语音输入）
+  goBatchRecord() {
+    wx.navigateTo({ url: '/pages/batchJournal/batchJournal' })
+  },
 })

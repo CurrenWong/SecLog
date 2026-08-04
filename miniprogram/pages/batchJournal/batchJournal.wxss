@@ -1,0 +1,470 @@
+.page {
+  padding: 24rpx;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: #f7f8fa;
+  padding-bottom: 140rpx;
+}
+
+/* ⭐ 智能输入卡片 */
+.ai-card {
+  background: linear-gradient(135deg, #e3f2fd 0%, #fce4ec 100%);
+  border-radius: 20rpx;
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.ai-header {
+  margin-bottom: 20rpx;
+}
+
+.ai-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.ai-subtitle {
+  font-size: 24rpx;
+  color: #888;
+  margin-left: 12rpx;
+}
+
+.ai-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  background: #fff;
+  border-radius: 50rpx;
+  padding: 6rpx 20rpx 6rpx 28rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.06);
+}
+
+.ai-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #333;
+  height: 72rpx;
+  line-height: 72rpx;
+  min-height: 72rpx;
+}
+
+.ai-send {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 600;
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.ai-send.parsing {
+  background: #bbb;
+}
+
+.ai-voice {
+  background: #fce4ec;
+  font-size: 44rpx;
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.1s;
+}
+
+.ai-voice.recording {
+  background: #ffebee;
+  transform: scale(1.15);
+  box-shadow: 0 0 16rpx rgba(244, 67, 54, 0.4);
+  animation: voice-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 8rpx rgba(244, 67, 54, 0.3); }
+  50% { box-shadow: 0 0 24rpx rgba(244, 67, 54, 0.6); }
+}
+
+.ai-hint {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  color: #666;
+  text-align: center;
+}
+
+/* 示例提示 */
+.example-hint {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.hint-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 16rpx;
+}
+
+.hint-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12rpx;
+  padding: 14rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+  font-size: 26rpx;
+  color: #888;
+  line-height: 1.5;
+}
+
+.hint-item:last-child {
+  border-bottom: none;
+}
+
+.hint-icon {
+  font-size: 30rpx;
+  flex-shrink: 0;
+  margin-top: 2rpx;
+}
+
+/* 结果头部 */
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.result-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+}
+
+.result-count {
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* 按天分组 */
+.day-group {
+  margin-bottom: 24rpx;
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 16rpx 20rpx;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 12rpx 12rpx 0 0;
+  color: #fff;
+}
+
+.day-label {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.day-date {
+  font-size: 24rpx;
+  opacity: 0.85;
+}
+
+/* 日记卡片 */
+.entry-card {
+  background: #fff;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.entry-card:last-child {
+  border-bottom: none;
+  border-radius: 0 0 12rpx 12rpx;
+}
+
+.entry-main {
+  display: flex;
+  align-items: flex-start;
+  padding: 20rpx;
+  gap: 16rpx;
+}
+
+.entry-time {
+  width: 100rpx;
+  flex-shrink: 0;
+  text-align: center;
+  padding-top: 4rpx;
+}
+
+.entry-time text {
+  font-size: 26rpx;
+  color: #667eea;
+  font-weight: 500;
+  background: #f0f0ff;
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+}
+
+.entry-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.entry-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.4;
+}
+
+.entry-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 6rpx;
+}
+
+.meta-location, .meta-transport {
+  font-size: 22rpx;
+  color: #888;
+}
+
+.entry-content {
+  font-size: 24rpx;
+  color: #999;
+  margin-top: 6rpx;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.entry-edit {
+  flex-shrink: 0;
+  font-size: 32rpx;
+  color: #bbb;
+  padding: 4rpx;
+}
+
+/* 旅程信息 */
+.trip-section {
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 24rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+}
+
+.field {
+  margin-bottom: 20rpx;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+.label {
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 10rpx;
+  font-weight: 500;
+}
+
+.input {
+  background: #f5f7fa;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  color: #333;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 保存按钮 */
+.save-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+
+.btn-save {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+  text-align: center;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  box-shadow: 0 6rpx 20rpx rgba(102, 126, 234, 0.3);
+}
+
+.btn-save-to {
+  background: #fff;
+  color: #667eea;
+  text-align: center;
+  padding: 28rpx;
+  border-radius: 16rpx;
+  font-size: 30rpx;
+  font-weight: 500;
+  border: 2rpx solid #667eea;
+}
+
+/* 弹窗 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 24rpx 24rpx 0 0;
+  padding: 32rpx;
+  width: 100%;
+  max-height: 80vh;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.modal-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 28rpx;
+  text-align: center;
+}
+
+.modal-field {
+  margin-bottom: 24rpx;
+}
+
+.mf-label {
+  display: block;
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 8rpx;
+  font-weight: 500;
+}
+
+.mf-value {
+  background: #f5f7fa;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.mf-input {
+  background: #f5f7fa;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  color: #333;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.location-row {
+  display: flex;
+  gap: 12rpx;
+  align-items: center;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+.location-btn {
+  width: 72rpx;
+  height: 72rpx;
+  background: #f0f0ff;
+  font-size: 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  flex-shrink: 0;
+}
+
+.mf-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 120rpx;
+  background: #f5f7fa;
+  border-radius: 12rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  color: #333;
+  line-height: 1.6;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.modal-btn {
+  flex: 1;
+  text-align: center;
+  padding: 22rpx;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+}
+
+.modal-btn.cancel {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.modal-btn.confirm {
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: #fff;
+}
+
+/* 旅程选择器 */
+.trip-picker {
+  max-height: 60vh;
+}
+
+.trip-list-scroll {
+  max-height: 50vh;
+  margin-bottom: 16rpx;
+}
+
+.trip-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 16rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.trip-opt-title {
+  font-size: 28rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+.trip-opt-date {
+  font-size: 22rpx;
+  color: #999;
+}

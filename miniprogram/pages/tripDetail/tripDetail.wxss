@@ -177,6 +177,31 @@
   line-height: 1.6;
 }
 
+/* 到下一站距离 */
+.journal-distance {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1px dashed #e8e8e8;
+}
+
+.distance-arrow {
+  font-size: 20rpx;
+  color: #667eea;
+  margin-right: 8rpx;
+}
+
+.distance-label {
+  font-size: 22rpx;
+  color: #667eea;
+  background: #f0f0ff;
+  padding: 6rpx 18rpx;
+  border-radius: 20rpx;
+  font-weight: 500;
+}
+
 /* 照片网格 */
 .photo-grid {
   display: flex;

@@ -67,6 +67,51 @@ Page({
     })
   },
 
+  // 查看地图
+  viewLocation() {
+    const loc = this.data.location
+    if (!loc) return
+
+    if (loc.latitude && loc.longitude) {
+      wx.openLocation({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        name: loc.name || '',
+        address: loc.address || '',
+        scale: 15,
+      })
+    } else if (loc.name) {
+      wx.showLoading({ title: '正在获取坐标…' })
+      wx.cloud.callFunction({
+        name: 'travelRecord',
+        data: { action: 'geocode', address: loc.name },
+      }).then((res) => {
+        wx.hideLoading()
+        if (res.result && res.result.success) {
+          this.setData({
+            location: {
+              name: loc.name,
+              address: res.result.address || '',
+              latitude: res.result.latitude,
+              longitude: res.result.longitude,
+            },
+          })
+          wx.openLocation({
+            latitude: res.result.latitude,
+            longitude: res.result.longitude,
+            name: loc.name,
+            scale: 15,
+          })
+        } else {
+          wx.showToast({ title: '未找到该地点坐标', icon: 'none' })
+        }
+      }).catch(() => {
+        wx.hideLoading()
+        wx.showToast({ title: '获取坐标失败', icon: 'none' })
+      })
+    }
+  },
+
   // 封面
   chooseCover() {
     wx.chooseMedia({

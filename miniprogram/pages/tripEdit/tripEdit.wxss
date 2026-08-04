@@ -53,8 +53,16 @@
   align-items: center;
   background: #fff;
   border-radius: 12rpx;
-  padding: 24rpx;
   box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+.location-left {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx;
 }
 
 .location-text {
@@ -69,6 +77,21 @@
 
 .location-icon {
   font-size: 36rpx;
+  margin-left: 12rpx;
+}
+
+.location-view-btn {
+  width: 72rpx;
+  height: 72rpx;
+  margin: 12rpx 20rpx 12rpx 0;
+  background: #e8f5e9;
+  font-size: 36rpx;
+  color: #07c160;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 /* 封面 */

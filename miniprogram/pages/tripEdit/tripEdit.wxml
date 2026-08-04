@@ -20,12 +20,17 @@
 
   <view class="field">
     <view class="label">目的地</view>
-    <view class="location-row" bind:tap="chooseLocation">
-      <view class="location-text">
-        <text wx:if="{{location}}">{{location.name}}</text>
-        <text wx:else class="placeholder">点击选择地点（支持导航）</text>
+    <view class="location-row">
+      <view class="location-left" bind:tap="chooseLocation">
+        <view class="location-text">
+          <text wx:if="{{location}}">{{location.name}}</text>
+          <text wx:else class="placeholder">点击选择地点（支持导航）</text>
+        </view>
+        <text class="location-icon">📍</text>
       </view>
-      <text class="location-icon">📍</text>
+      <view class="location-view-btn" wx:if="{{location}}" bind:tap="viewLocation">
+        <text>🗺️</text>
+      </view>
     </view>
   </view>
 

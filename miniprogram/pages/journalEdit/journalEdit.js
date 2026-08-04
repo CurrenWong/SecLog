@@ -19,8 +19,6 @@ Page({
     date: '',
     time: '',
     day: 1,
-    dayIndex: 0,
-    dayOptions: ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7', 'Day 8', 'Day 9', 'Day 10'],
     title: '',
     content: '',
     location: null,
@@ -64,8 +62,8 @@ Page({
     this._manager.onStop = (res) => {
       const text = res.result || ''
       if (text) {
-        // 尝试用 NLP 解析
-        this.nlpParse(text)
+        this.setData({ aiInputText: text })
+        wx.showToast({ title: '已识别，点击↵解析', icon: 'none' })
       }
     }
     this._manager.onError = (err) => {
@@ -114,14 +112,18 @@ Page({
         const entries = res.result.entries || []
         const journal = entries.find((e) => e._id === journalId)
         if (journal) {
+          // 解析 location（从 JSON 字符串还原为对象）
+          let loc = journal.location || null
+          if (typeof loc === 'string') {
+            try { loc = JSON.parse(loc) } catch (e) { loc = null }
+          }
           this.setData({
             date: journal.date,
             time: journal.time || '',
             day: journal.day,
-            dayIndex: Math.max(0, (journal.day || 1) - 1),
             title: journal.title || '',
             content: journal.content || '',
-            location: journal.location || null,
+            location: loc,
             photos: journal.photos || [],
             trip: res.result.trip,
           })
@@ -145,31 +147,23 @@ Page({
     this.nlpParse(text)
   },
 
-  // ========== 语音输入 ==========
-  startVoiceInput() {
-    wx.showModal({
-      title: '语音输入',
-      content: '点击「开始」后说话，说完后自动识别',
-      confirmText: '开始录音',
-      success: (res) => {
-        if (res.confirm) {
-          this._manager.start({ lang: 'zh_CN' })
-          wx.showToast({ title: '正在听…', icon: 'none', duration: 60000 })
-          // 3秒后自动停止
-          setTimeout(() => {
-            this._manager.stop()
-            wx.hideToast()
-          }, 3000)
-        }
-      },
-    })
+  // ========== 语音输入（按住录音，松手识别） ==========
+  onVoiceTouchStart() {
+    if (this.data._recording) return
+    this.setData({ _recording: true })
+    this._manager.start({ lang: 'zh_CN' })
+    wx.showToast({ title: '🎤 录音中，松手结束', icon: 'none', duration: 60000 })
+  },
+
+  onVoiceTouchEnd() {
+    if (!this.data._recording) return
+    this.setData({ _recording: false })
+    this._manager.stop()
+    wx.hideToast()
   },
 
   // NLP 解析
   nlpParse(text) {
-    // 先显示原文
-    this.setData({ content: text })
-
     // 尝试 AI 解析
     const callParams = { action: 'parseNaturalLanguage', text }
     if (this.data.trip && this.data.trip.startDate) {
@@ -190,7 +184,7 @@ Page({
         updates.title = p.title || (p.location && p.location.name) || text.slice(0, 12) || ''
         updates.location = p.location && p.location.name
           ? { name: p.location.name }
-          : { name: '' }
+          : null
         updates.content = p.content || text
         updates.aiInputText = ''
         wx.showToast({ title: '✅ 已识别并填好', icon: 'none' })
@@ -223,6 +217,54 @@ Page({
         }
       },
     })
+  },
+
+  // ========== 查看地图 ==========
+  viewLocation() {
+    const loc = this.data.location
+    if (!loc) return
+
+    if (loc.latitude && loc.longitude) {
+      // 已有坐标 → 直接打开地图
+      wx.openLocation({
+        latitude: loc.latitude,
+        longitude: loc.longitude,
+        name: loc.name || '',
+        address: loc.address || '',
+        scale: 15,
+      })
+    } else if (loc.name) {
+      // AI识别只有文本 → 尝试地理编码获取坐标
+      wx.showLoading({ title: '正在获取坐标…' })
+      wx.cloud.callFunction({
+        name: 'travelRecord',
+        data: { action: 'geocode', address: loc.name },
+      }).then((res) => {
+        wx.hideLoading()
+        if (res.result && res.result.success) {
+          // 更新坐标到本地，下次直接打开
+          this.setData({
+            location: {
+              name: loc.name,
+              address: res.result.address || '',
+              latitude: res.result.latitude,
+              longitude: res.result.longitude,
+            },
+          })
+          wx.openLocation({
+            latitude: res.result.latitude,
+            longitude: res.result.longitude,
+            name: loc.name,
+            scale: 15,
+          })
+        } else {
+          wx.showToast({ title: '未找到该地点坐标', icon: 'none' })
+        }
+      }).catch(() => {
+        wx.hideLoading()
+        wx.showToast({ title: '获取坐标失败', icon: 'none' })
+      })
+    }
   },
 
   // ========== 照片 ==========
@@ -270,11 +312,6 @@ Page({
     this.setData({ time: e.detail.value })
   },
 
-  onDayChange(e) {
-    const idx = parseInt(e.detail.value)
-    this.setData({ day: idx + 1, dayIndex: idx })
-  },
-
   onTitleInput(e) {
     this.setData({ title: e.detail.value })
   },
@@ -291,7 +328,7 @@ Page({
     if (tripStart && !isNaN(tripStart.getTime())) {
       const diff = Math.floor((current - tripStart) / (1000 * 60 * 60 * 24)) + 1
       if (diff > 0 && diff <= 10) {
-        this.setData({ day: diff, dayIndex: diff - 1 })
+        this.setData({ day: diff })
       }
     }
   },

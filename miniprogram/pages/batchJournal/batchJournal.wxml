@@ -1,0 +1,163 @@
+<view class="page">
+  <!-- ⭐ 智能输入区 -->
+  <view class="ai-card">
+    <view class="ai-header">
+      <text class="ai-title">📝 多日行程输入</text>
+      <text class="ai-subtitle">说一段话，自动解析成多天行程</text>
+    </view>
+    <view class="ai-input-row">
+      <input
+        class="ai-input"
+        placeholder="例如：前天从上海飞去了北京，下午到了天安门…"
+        value="{{inputText}}"
+        bindinput="onInputChange"
+        bindconfirm="onParse"
+        confirm-type="send"
+      />
+      <view class="ai-send {{parsing ? 'parsing' : ''}}" bind:tap="onParse">
+        <text wx:if="{{!parsing}}">⚡</text>
+        <text wx:else>⏳</text>
+      </view>
+      <view class="ai-voice {{_recording ? 'recording' : ''}}"
+        bind:touchstart="onVoiceTouchStart"
+        bind:touchend="onVoiceTouchEnd"
+        bind:touchcancel="onVoiceTouchEnd">
+        <text>{{_recording ? '🔴' : '🎤'}}</text>
+      </view>
+    </view>
+    <view class="ai-hint" wx:if="{{parsing}}">
+      <text>🤔 正在解析多日行程…</text>
+    </view>
+  </view>
+
+  <!-- 示例提示 -->
+  <view class="example-hint" wx:if="{{!parsed && !parsing}}">
+    <view class="hint-title">💡 输入示例</view>
+    <view class="hint-item" bind:tap="fillExample" data-example="0">
+      <text class="hint-icon">✈️</text>
+      <text>前天上海飞北京→天安门，昨天天坛→火锅→王府井，今天飞回上海</text>
+    </view>
+    <view class="hint-item" bind:tap="fillExample" data-example="1">
+      <text class="hint-icon">🏔️</text>
+      <text>昨天上午爬黄山，下午逛宏村，今天上午看日出，下午回杭州</text>
+    </view>
+    <view class="hint-item" bind:tap="fillExample" data-example="2">
+      <text class="hint-icon">🍜</text>
+      <text>昨天中午到成都吃火锅，下午逛宽窄巷子，晚上看变脸，今天上午看熊猫，下午去锦里</text>
+    </view>
+  </view>
+
+  <!-- 解析结果 -->
+  <view wx:if="{{parsed && !parsing}}">
+    <view class="result-header">
+      <text class="result-title">📋 解析结果</text>
+      <text class="result-count">共 {{totalEntries}} 条日记，{{days.length}} 天</text>
+    </view>
+
+    <!-- 按天展示 -->
+    <view class="day-group" wx:for="{{days}}" wx:key="day">
+      <view class="day-header">
+        <text class="day-label">第 {{item.day}} 天</text>
+        <text class="day-date">{{item.relativeLabel}}（{{item.dateLabel}}）</text>
+      </view>
+
+      <view class="entry-card" wx:for="{{item.entries}}" wx:for-item="entry" wx:key="*this">
+        <view class="entry-main" bind:tap="editEntry" data-day="{{index}}" data-eidx="{{entryIndex}}">
+          <view class="entry-time">
+            <text>{{entry.time || '--:--'}}</text>
+          </view>
+          <view class="entry-body">
+            <view class="entry-title">{{entry.title}}</view>
+            <view class="entry-meta">
+              <text wx:if="{{entry.location && entry.location.name}}" class="meta-location">📍 {{entry.location.name}}</text>
+              <text wx:if="{{entry.transport}}" class="meta-transport">🚄 {{entry.transport}}</text>
+            </view>
+            <view class="entry-content" wx:if="{{entry.content}}">{{entry.content}}</view>
+          </view>
+          <view class="entry-edit">
+            <text>✏️</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 旅程信息 -->
+    <view class="trip-section">
+      <view class="field">
+        <view class="label">旅程名称</view>
+        <input class="input" value="{{tripTitle}}" bindinput="onTripTitleChange" placeholder="自动生成或手动输入" />
+      </view>
+      <view class="field">
+        <view class="label">旅程地点</view>
+        <input class="input" value="{{tripLocation}}" bindinput="onTripLocationChange" placeholder="如：北京" />
+      </view>
+    </view>
+
+    <!-- 保存按钮 -->
+    <view class="save-section">
+      <view class="btn-save" bind:tap="saveToNewTrip">
+        <text>💾 保存为新的旅程</text>
+      </view>
+      <view class="btn-save-to" bind:tap="saveToExistingTrip" wx:if="{{trips.length > 0}}">
+        <text>📌 添加到已有旅程</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 编辑弹窗 -->
+  <view class="modal-overlay" wx:if="{{showEditModal}}" bind:tap="closeEditModal">
+    <view class="modal-content" catch:tap="">
+      <view class="modal-title">编辑日记</view>
+
+      <view class="modal-field">
+        <text class="mf-label">时间</text>
+        <picker mode="time" value="{{editTime}}" bindchange="onEditTimeChange">
+          <view class="mf-value">{{editTime || '选填'}}</view>
+        </picker>
+      </view>
+
+      <view class="modal-field">
+        <text class="mf-label">标题</text>
+        <input class="mf-input" value="{{editTitle}}" bindinput="onEditTitleInput" placeholder="简短标题" />
+      </view>
+
+      <view class="modal-field">
+        <text class="mf-label">地点</text>
+        <view class="location-row">
+          <input class="mf-input flex-1" value="{{editLocationName}}" bindinput="onEditLocationInput" placeholder="地点名称" />
+          <view class="location-btn" bind:tap="chooseEditLocation">📍</view>
+        </view>
+      </view>
+
+      <view class="modal-field">
+        <text class="mf-label">内容</text>
+        <textarea class="mf-textarea" value="{{editContent}}" bindinput="onEditContentInput" placeholder="详细描述…" auto-height />
+      </view>
+
+      <view class="modal-actions">
+        <view class="modal-btn cancel" bind:tap="closeEditModal">取消</view>
+        <view class="modal-btn confirm" bind:tap="confirmEditEntry">确认</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 选择已有旅程弹窗 -->
+  <view class="modal-overlay" wx:if="{{showTripPicker}}" bind:tap="closeTripPicker">
+    <view class="modal-content trip-picker" catch:tap="">
+      <view class="modal-title">选择目标旅程</view>
+      <scroll-view scroll-y class="trip-list-scroll">
+        <view
+          class="trip-option"
+          wx:for="{{trips}}"
+          wx:key="_id"
+          bind:tap="selectTrip"
+          data-id="{{item._id}}"
+          data-title="{{item.title}}">
+          <text class="trip-opt-title">{{item.title}}</text>
+          <text class="trip-opt-date">{{item.startDate}} ~ {{item.endDate}}</text>
+        </view>
+      </scroll-view>
+      <view class="modal-btn cancel" bind:tap="closeTripPicker">取消</view>
+    </view>
+  </view>
+</view>

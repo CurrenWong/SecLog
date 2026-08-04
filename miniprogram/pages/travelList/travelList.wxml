@@ -3,6 +3,10 @@
   <view class="top-bar">
     <view class="title">我的旅途</view>
     <view class="actions">
+      <view class="btn-speech" bind:tap="goBatchRecord">
+        <text class="icon">📝</text>
+        <text>批量记录</text>
+      </view>
       <view class="btn-speech" bind:tap="goQuickRecord">
         <text class="icon">🎤</text>
         <text>快速记录</text>

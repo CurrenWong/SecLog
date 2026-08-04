@@ -420,3 +420,169 @@ describe('travelRecord 日记 CRUD（含地点）', () => {
     })
   })
 })
+
+// ========== parseMultiDay 多日行程 NLP 解析测试 ==========
+describe('parseMultiDay', () => {
+  describe('参数校验', () => {
+    test('空文本返回错误', async () => {
+      const r = await call('parseMultiDay', { text: '' })
+      expect(r.success).toBe(false)
+      expect(r.error).toBe('text 必填')
+    })
+    test('空白文本返回错误', async () => {
+      const r = await call('parseMultiDay', { text: '   ' })
+      expect(r.success).toBe(false)
+      expect(r.error).toBe('text 必填')
+    })
+  })
+
+  describe('AI 解析成功路径', () => {
+    test('三天行程', async () => {
+      tcbStub.__setMockResponse(JSON.stringify({
+        tripTitle: '北京之旅',
+        tripStartDate: '2026-08-02',
+        tripEndDate: '2026-08-04',
+        days: [
+          { day: 1, date: '2026-08-02', entries: [{ time: '09:00', title: '上海飞往北京', content: '从上海飞去了北京', location: { name: '北京' }, transport: '飞机' }, { time: '14:00', title: '参观天安门', content: '下午到了天安门', location: { name: '天安门' }, transport: '' }] },
+          { day: 2, date: '2026-08-03', entries: [{ time: '09:00', title: '游览天坛', content: '上午去了天坛', location: { name: '天坛' }, transport: '' }, { time: '12:00', title: '午餐吃火锅', content: '中午吃火锅', location: { name: '火锅店' }, transport: '' }, { time: '14:00', title: '逛王府井', content: '下午逛了王府井', location: { name: '王府井' }, transport: '' }] },
+          { day: 3, date: '2026-08-04', entries: [{ time: '10:00', title: '北京飞回上海', content: '北京飞回了上海', location: { name: '上海' }, transport: '飞机' }] },
+        ],
+      }))
+      const r = await call('parseMultiDay', { text: '前天从上海飞去了北京，下午到了天安门，昨天上午去了天坛，中午吃火锅，下午逛了王府井，今天北京飞回了上海' })
+      expect(r.success).toBe(true)
+      expect(r.days.length).toBe(3)
+      expect(r.days[0].entries.length).toBe(2)
+      expect(r.days[1].entries.length).toBe(3)
+      expect(r.days[2].entries.length).toBe(1)
+      expect(r.totalEntries).toBe(6)
+      expect(r.tripTitle).toBe('北京之旅')
+      expect(r.days[0].entries[0].transport).toBe('飞机')
+    })
+
+    test('单日行程', async () => {
+      tcbStub.__setMockResponse(JSON.stringify({
+        tripTitle: '迪士尼一日游',
+        tripStartDate: '2026-08-04',
+        tripEndDate: '2026-08-04',
+        days: [{ day: 1, date: '2026-08-04', entries: [{ time: '09:00', title: '游玩迪士尼', content: '今天去了迪士尼', location: { name: '迪士尼' }, transport: '' }] }],
+      }))
+      const r = await call('parseMultiDay', { text: '今天去了迪士尼' })
+      expect(r.success).toBe(true)
+      expect(r.days.length).toBe(1)
+      expect(r.totalEntries).toBe(1)
+    })
+
+    test('AI 返回非 JSON 格式', async () => {
+      tcbStub.__setMockResponse('抱歉，我无法处理这个输入。')
+      const r = await call('parseMultiDay', { text: '随便说点什么' })
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/格式异常/)
+    })
+
+    test('AI 返回空 days 数组', async () => {
+      tcbStub.__setMockResponse(JSON.stringify({ tripTitle: '无效', days: [] }))
+      const r = await call('parseMultiDay', { text: '没有行程' })
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/未能解析/)
+    })
+
+    test('AI 调用失败', async () => {
+      tcbStub.__setMockError(new Error('AI 服务不可用'))
+      const r = await call('parseMultiDay', { text: '今天去了故宫' })
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/AI 解析失败/)
+    })
+
+    test('AI 返回 JSON 在代码块中', async () => {
+      tcbStub.__setMockResponse('```json\n' + JSON.stringify({
+        tripTitle: '成都美食之旅',
+        tripStartDate: '2026-08-03',
+        tripEndDate: '2026-08-04',
+        days: [
+          { day: 1, date: '2026-08-03', entries: [{ time: '12:00', title: '午餐吃火锅', content: '中午到成都吃火锅', location: { name: '成都' }, transport: '高铁' }, { time: '14:00', title: '逛宽窄巷子', content: '下午逛宽窄巷子', location: { name: '宽窄巷子' }, transport: '' }, { time: '19:00', title: '看变脸', content: '晚上看变脸表演', location: { name: '成都' }, transport: '' }] },
+          { day: 2, date: '2026-08-04', entries: [{ time: '09:00', title: '看熊猫', content: '上午看大熊猫', location: { name: '成都大熊猫基地' }, transport: '' }, { time: '14:00', title: '逛锦里', content: '下午去锦里', location: { name: '锦里' }, transport: '' }] },
+        ],
+      }) + '\n```')
+      const r = await call('parseMultiDay', { text: '昨天中午到成都吃火锅，下午逛宽窄巷子，晚上看变脸，今天上午看熊猫，下午去锦里' })
+      expect(r.success).toBe(true)
+      expect(r.days.length).toBe(2)
+      expect(r.totalEntries).toBe(5)
+    })
+  })
+
+  describe('带 today 参数', () => {
+    test('指定 today 日期', async () => {
+      tcbStub.__setMockResponse(JSON.stringify({
+        tripTitle: '周末游',
+        tripStartDate: '2026-09-19',
+        tripEndDate: '2026-09-20',
+        days: [
+          { day: 1, date: '2026-09-19', entries: [{ time: '09:00', title: '出发', content: '昨天出发', location: null, transport: '' }] },
+          { day: 2, date: '2026-09-20', entries: [{ time: '14:00', title: '游玩', content: '今天游玩', location: { name: '杭州' }, transport: '高铁' }] },
+        ],
+      }))
+      const r = await call('parseMultiDay', { text: '昨天从上海出发去杭州，今天在杭州玩', today: '2026-09-20' })
+      expect(r.success).toBe(true)
+      expect(r.days[0].date).toBe('2026-09-19')
+      expect(r.days[1].date).toBe('2026-09-20')
+    })
+  })
+})
+
+// ========== saveMultiDay 批量保存测试 ==========
+describe('saveMultiDay', () => {
+  describe('参数校验', () => {
+    test('days 为空数组返回错误', async () => {
+      const r = await call('saveMultiDay', { days: [] })
+      expect(r.success).toBe(false)
+      expect(r.error).toBe('days 必填且不能为空')
+    })
+    test('days 未传返回错误', async () => {
+      const r = await call('saveMultiDay', { })
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/days 必填/)
+    })
+  })
+
+  describe('保存到新旅程', () => {
+    test('保存三天行程，自动创建旅程', async () => {
+      const days = [
+        { day: 1, date: '2026-08-02', entries: [{ time: '09:00', title: '上海飞往北京', content: '从上海飞去了北京', location: { name: '北京' }, transport: '飞机' }, { time: '14:00', title: '参观天安门', content: '下午到了天安门', location: { name: '天安门' }, transport: '' }] },
+        { day: 2, date: '2026-08-03', entries: [{ time: '09:00', title: '游览天坛', content: '上午去了天坛', location: { name: '天坛' }, transport: '' }] },
+      ]
+      const r = await call('saveMultiDay', { days, tripTitle: '北京之旅', tripStartDate: '2026-08-02', tripEndDate: '2026-08-03' })
+      expect(r.success).toBe(true)
+      expect(r.tripId).toBeTruthy()
+      expect(r.journalCount).toBe(3)
+      expect(r.journalIds.length).toBe(3)
+      const store = cloud.__store()
+      const trip = store.find((s) => s._id === r.tripId)
+      expect(trip).toBeTruthy()
+      expect(trip.title).toBe('北京之旅')
+      expect(trip.entryCount).toBe(3)
+    })
+
+    test('不传标题自动生成', async () => {
+      const days = [{ day: 1, date: '2026-08-04', entries: [{ time: '10:00', title: '出去玩', content: '出去玩', location: null, transport: '' }] }]
+      const r = await call('saveMultiDay', { days, tripStartDate: '2026-08-04', tripEndDate: '2026-08-04' })
+      expect(r.success).toBe(true)
+      const store = cloud.__store()
+      const trip = store.find((s) => s._id === r.tripId)
+      expect(trip.title).toContain('2026-08-04')
+    })
+  })
+
+  describe('保存到已有旅程', () => {
+    test('追加到已有旅程', async () => {
+      const trip = await call('createTrip', { title: '北京之旅', startDate: '2026-08-01', endDate: '2026-08-05' })
+      const days = [{ day: 3, date: '2026-08-03', entries: [{ time: '14:00', title: '逛故宫', content: '下午逛故宫', location: { name: '故宫' }, transport: '' }] }]
+      const r = await call('saveMultiDay', { days, targetTripId: trip.tripId, tripStartDate: '2026-08-01', tripEndDate: '2026-08-05' })
+      expect(r.success).toBe(true)
+      expect(r.journalCount).toBe(1)
+      expect(r.tripId).toBe(trip.tripId)
+      const store = cloud.__store()
+      const updatedTrip = store.find((s) => s._id === trip.tripId)
+      expect(updatedTrip.entryCount).toBe(1)
+    })
+  })
+})
