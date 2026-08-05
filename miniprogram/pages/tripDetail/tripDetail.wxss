@@ -32,6 +32,7 @@
   font-size: 24rpx;
   opacity: 0.9;
   margin-bottom: 8rpx;
+  line-height: 1.6;
 }
 
 .trip-summary {

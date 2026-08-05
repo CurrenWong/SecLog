@@ -224,7 +224,7 @@
   font-size: 28rpx;
   font-weight: 600;
   color: #333;
-  line-height: 1.4;
+  line-height: 1.6;
 }
 
 .entry-meta {
@@ -290,6 +290,8 @@
   color: #333;
   width: 100%;
   box-sizing: border-box;
+  line-height: 1.6;
+  min-height: 88rpx;
 }
 
 /* 保存按钮 */
