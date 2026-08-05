@@ -206,6 +206,59 @@ async function computeDistances(entries) {
   return entries
 }
 
+/**
+ * 保存多日行程后，异步触发相邻地点距离计算
+ * 批量解析的日记只有 location.name（地名），没有坐标
+ * 需要先地理编码获取坐标，再计算驾车距离
+ */
+async function computeDistancesAfterSave(tripId, journalIds) {
+  const key = process.env.TENCENT_MAP_KEY
+  if (!key) return
+
+  // 1. 获取所有日记（按 day/time 排序）
+  const filter = ownerFilter()
+  if (!filter) return
+
+  const res = await db.collection(JOURNALS)
+    .where({ tripId, ...filter })
+    .orderBy('day', 'asc')
+    .orderBy('time', 'asc')
+    .get()
+
+  const entries = res.data || []
+  if (entries.length < 2) return
+
+  // 2. 对没有坐标但 name 不为空的 location 进行地理编码
+  const geocodePromises = entries.map(async (entry) => {
+    if (typeof entry.location === 'string') {
+      try { entry.location = JSON.parse(entry.location) } catch (e) { entry.location = null }
+    }
+    if (!entry.location || !entry.location.name) return entry
+    // 已有坐标不重复编码
+    if (entry.location.latitude && entry.location.longitude) return entry
+    // 优先尝试腾讯地图 API 地理编码
+    try {
+      const geoResult = await geocodeByTencent(entry.location.name, key)
+      if (geoResult.success) {
+        entry.location.latitude = geoResult.latitude
+        entry.location.longitude = geoResult.longitude
+        // 坐标存回数据库
+        await db.collection(JOURNALS).doc(entry._id).update({
+          data: { location: JSON.stringify(entry.location) },
+        })
+      }
+    } catch (e) {
+      console.error('geocode failed for', entry.location.name, e)
+    }
+    return entry
+  })
+
+  await Promise.all(geocodePromises)
+
+  // 3. 计算相邻地点距离
+  await computeDistances(entries)
+}
+
 // ========== 日记 CRUD ==========
 
 async function addJournal({ tripId, day, date, time, title, location, content, photos }) {
@@ -790,6 +843,11 @@ async function saveMultiDay({ tripTitle, tripStartDate, tripEndDate, tripLocatio
       endDate: tripEndDate,
       updatedAt: now,
     },
+  })
+
+  // 4. 触发相邻地点距离计算（异步，不阻塞返回）
+  computeDistancesAfterSave(tripId, journals).catch((e) => {
+    console.error('saveMultiDay computeDistancesAfterSave error:', e)
   })
 
   return {
