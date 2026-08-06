@@ -1011,7 +1011,7 @@ Page({
       mediaType: ['image'],
       sourceType: ['camera', 'album'],
       // 压缩图（系统压缩 + 二次压缩）：OCR 不需要高分辨率，减小图片体积加速上传和识别
-      sizeType: ['compressed'],
+      sizeType: ['original'], // 系统不压缩，二次压缩一手包办，避免两次有损叠加
       success: async (res) => {
         const tempFile = res.tempFiles && res.tempFiles[0]
         if (!tempFile) return
