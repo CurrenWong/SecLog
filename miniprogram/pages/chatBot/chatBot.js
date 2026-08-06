@@ -1017,13 +1017,13 @@ Page({
         if (!tempFile) return
         self.setData({ ocrLoading: true, ocrError: '' })
         try {
-          // 1. 二次压缩：限制最长边 720px（OCR 不需要高分辨率，减小体积加速上传 + 模型识别）
+          // 1. 二次压缩：限制最长边 480px + quality 50%（OCR 小票/发票够用，极致压缩加速上传 + 识别）
           let toUpload = tempFile.tempFilePath
           try {
             const compressed = await wx.compressImage({
               src: tempFile.tempFilePath,
-              compressedHeight: 720,
-              quality: 70,
+              compressedHeight: 480,
+              quality: 50,
             })
             if (compressed && compressed.tempFilePath) toUpload = compressed.tempFilePath
           } catch (e) {
