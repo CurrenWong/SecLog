@@ -1010,20 +1010,20 @@ Page({
       count: 1,
       mediaType: ['image'],
       sourceType: ['camera', 'album'],
-      // 原图（不压缩）：qwen3.5-flash 对压缩 JPEG 偶发解析超时，原图识别更稳
-      sizeType: ['original'],
+      // 压缩图（系统压缩 + 二次压缩）：OCR 不需要高分辨率，减小图片体积加速上传和识别
+      sizeType: ['compressed'],
       success: async (res) => {
         const tempFile = res.tempFiles && res.tempFiles[0]
         if (!tempFile) return
         self.setData({ ocrLoading: true, ocrError: '' })
         try {
-          // 1. 压缩图片：限制最长边 1024px（qwen3.5-flash 对大图/长图解析慢、易超时）
+          // 1. 二次压缩：限制最长边 720px（OCR 不需要高分辨率，减小体积加速上传 + 模型识别）
           let toUpload = tempFile.tempFilePath
           try {
             const compressed = await wx.compressImage({
               src: tempFile.tempFilePath,
-              compressedHeight: 1024,
-              quality: 80,
+              compressedHeight: 720,
+              quality: 70,
             })
             if (compressed && compressed.tempFilePath) toUpload = compressed.tempFilePath
           } catch (e) {
