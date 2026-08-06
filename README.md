@@ -111,7 +111,7 @@ miaojiRecord(login) → 取 openid/unionid，upsert users 集合
 - 对话 UI 复用 `components/agent-ui` 组件（bot 模式，直连大模型）
 - 意图理解：`miniprogram/utils/extractByModel.js`（`classifyIntent` + prompt）
 - 记账数据：`cloudfunctions/miaojiRecord/` 云函数（增 / 查 / 删 / 汇总 / 统计）
-- 本地测试：`ci-tools/`（Jest，184+ 用例全绿，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成 / 月边界）
+- 本地测试：`ci-tools/`（Jest，228 用例，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成 / 月边界 / 旅游模块 / 多日批量 / 地理编码）
 - 基础库最低 `3.8.1`，本地推荐 `3.16.2`（见 `project.private.config.json`）
 
 ## 目录结构
@@ -125,7 +125,12 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 │   │   │   └── chatBot.js      ← ⭐ 意图路由 + 多轮上下文 + 查询模板 + 拍照 OCR 确认流（核心）
 │   │   ├── guide/              ← 使用引导页（独立入口）
 │   │   ├── profile/            ← 个人中心：头像/昵称/本月汇总/退出登录
-│   │   └── records/           ← 记账明细：列表 + 编辑 + 删除（本月，月边界与查账面板一致）
+│   │   ├── records/            ← 记账明细：列表 + 编辑 + 删除（本月，月边界与查账面板一致）
+│   │   ├── travelList/         ← 旅程列表：旅程卡片 + 新建 + 批量记录入口
+│   │   ├── tripDetail/         ← 旅程详情：时间线 + 相邻地点驾车距离
+│   │   ├── journalEdit/        ← 日记编辑：标题/日期/时间/地点/照片/内容
+│   │   ├── tripEdit/           ← 旅程编辑：标题/日期范围/封面/地点
+│   │   └── batchJournal/       ← 批量记录：自然语言/语音输入多日行程，AI 解析按天展示
 │   ├── components/
 │   │   ├── agent-ui/           ← 对话主体组件（含工具卡片渲染）
 │   │   └── toolCard/           ← 地图/天气/商家等工具卡（agent-ui 依赖，勿删）
@@ -137,7 +142,8 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 │   ├── app.js / app.json / app.wxss
 │   └── package.json / sitemap.json
 ├── cloudfunctions/
-│   └── miaojiRecord/           ← ⭐ 记账云函数（add/list/delete/summary/stats/ocr/login/updateProfile，按 openid 隔离）
+│   ├── miaojiRecord/           ← ⭐ 记账云函数（add/list/delete/summary/stats/ocr/login/updateProfile，按 openid 隔离）
+│   └── travelRecord/           ← 旅游云函数（journals CRUD / trips CRUD / calcDistance / parseMultiDay / saveMultiDay / geocode / computeDistances）
 ├── avatars/                     ← 用户头像（chooseAvatar 上传的云存储落地目录镜像，git 跟踪占位）
 ├── images/                      ← 小程序静态图（app-logo / default-avatar 等）
 ├── ci-tools/                   ← ⭐ 本地测试 + 编译（Jest + compile.js 出真机二维码）
@@ -160,7 +166,7 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 
 ```bash
 cd ci-tools
-npx jest            # 跑全量 161 用例（意图路由 / 云函数 / 多轮上下文 / 页面集成）
+npx jest            # 跑全量 228 用例（意图路由 / 云函数 / 多轮上下文 / 页面集成 / 旅游模块 / 多日批量 / 地理编码）
 npx jest tests/extractByModel.test.js   # 单文件
 ```
 
@@ -200,14 +206,17 @@ npm i -g @cloudbase/cli
 | 一句话多笔记账（multi_record） | ✅ 已上线（正则抽线索 + 模型最终判定） |
 | 多轮上下文（滑动窗口 10 轮 + 远处摘要） | ✅ 已上线 |
 | 被动填槽（记一笔→追问→补全） | ✅ 已上线 |
-| 本地测试 | ✅ 161 用例全绿 |
+| 本地测试 | ✅ 228 用例（核心逻辑 + 云函数 + 页面集成 + 旅游模块 + 多日批量 + 地理编码） |
 | 意图识别分层（正则优先 + 模型兜底） | ✅ 已上线（1.0.9） |
 | 分类明细（"餐饮明细"只显示该类别） | ✅ 已上线（1.0.9） |
 | 拼音/英文输入识别（newnew100） | ✅ 已上线（1.0.6） |
 | 模型降级失败行为（不反问，直接执行） | ✅ 已上线（1.0.7） |
-| 拍照记账 | ✅ 已上线（云函数 cloud.ai() + qwen3.5-flash 多模态识别） |
+| 拍照记账 | ✅ 已上线（云函数 cloud.ai() + qwen3.5-plus 多模态识别） |
 | 登录 + 个人中心 | ✅ 已上线（静默登录 + users 集合 + 头像/昵称编辑） |
 | 记账明细页 | ✅ 已上线（列表 / 编辑 / 删除，openid 隔离） |
+| 旅游记录模块 | ✅ 已上线（独立 travelRecord 云函数 + 4 页：旅程列表/详情/日记编辑/旅程编辑） |
+| 多日行程批量记录 | ✅ 已上线（batchJournal 页面：自然语言/语音输入，AI 自动解析多天并按天展示） |
+| 相邻地点驾车距离 | ✅ 已上线（腾讯地图 API 驾车路线规划，自动地理编码 + AI 智能城市判断兜底） |
 | `quickstartFunctions` | 🟡 早期压测 demo，与产品无关，可删 |
 
 ## 文档参考

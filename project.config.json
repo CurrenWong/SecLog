@@ -68,7 +68,12 @@
     "tabSize": 2
   },
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "suffix",
+        "value": ".map"
+      }
+    ],
     "include": []
   },
   "appid": "WX_OWN_APPID_PLACEHOLDER",
