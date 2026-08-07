@@ -65,7 +65,7 @@
 6. 纯数字 + 单位（`38元` / `100块`）
 
 **③ 分类判定**
-`CATEGORY_MAP` 顺序匹配用户原话里的类别关键词，命中第一个即定类（餐饮优先于交通，故 `subway` 仅保留在交通避免被餐饮抢）。纯数字兜底路径（`matchesExpenseFallback`）覆盖白名单外新品类词（`谷子20`/`手办15`），归"其他"类。
+`CATEGORY_MAP` 顺序匹配用户原话里的类别关键词，命中第一个即定类（餐饮优先于交通，故 `subway` 仅保留在交通避免被餐饮抢）。纯数字兜底路径（`matchesExpenseFallback`）覆盖白名单外新品类词（`谷子20`/`手办15`），但不再直接归"其他"，而是返回 `category: null`，交由大模型 prompt 5.5 节用常识判断分类（如冰淇淋→餐饮、打车→交通）。
 
 **④ 日期识别（_date 字段）**
 `parseDateHint(text)` 抽取相对日期，写入 `_date`（YYYY-MM-DD），交由云函数 `add` 的 `date` 参数落库：
@@ -111,7 +111,7 @@ miaojiRecord(login) → 取 openid/unionid，upsert users 集合
 - 对话 UI 复用 `components/agent-ui` 组件（bot 模式，直连大模型）
 - 意图理解：`miniprogram/utils/extractByModel.js`（`classifyIntent` + prompt）
 - 记账数据：`cloudfunctions/miaojiRecord/` 云函数（增 / 查 / 删 / 汇总 / 统计）
-- 本地测试：`ci-tools/`（Jest，228 用例，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成 / 月边界 / 旅游模块 / 多日批量 / 地理编码）
+- 本地测试：`ci-tools/`（Jest，228 用例，覆盖意图路由 / 云函数 / 多轮上下文 / 页面集成 / 月边界 / 旅游模块 / 多日批量 / 地理编码 / 大模型分类兜底）
 - 基础库最低 `3.8.1`，本地推荐 `3.16.2`（见 `project.private.config.json`）
 
 ## 目录结构
@@ -147,7 +147,7 @@ SecLog/                          ← 项目根（微信开发者工具打开此�
 ├── avatars/                     ← 用户头像（chooseAvatar 上传的云存储落地目录镜像，git 跟踪占位）
 ├── images/                      ← 小程序静态图（app-logo / default-avatar 等）
 ├── ci-tools/                   ← ⭐ 本地测试 + 编译（Jest + compile.js 出真机二维码）
-│   ├── tests/                  ← 161 用例（意图路由 / 云函数 / 多轮 / 页面集成）
+│   ├── tests/                  ← 228 用例（意图路由 / 云函数 / 多轮 / 页面集成 / 旅游模块 / 地理编码 / 大模型分类兜底）
 │   └── compile.js              ← 微信开发者工具 CLI 编译，生成真机预览二维码
 ├── project.config.json         ← 微信开发者工具项目配置
 ├── project.private.config.json ← 本地私有配置（不提交）

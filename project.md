@@ -139,7 +139,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 设计要点：
 - **分类单一数据源**：`CATEGORY_KEYWORDS` 是唯一词库。改分类关键词只改这一处，`AMOUNT_PATTERNS` / `CATEGORY_MAP` / `INTENT_KEYS` **全部自动派生**（禁止手动维护派生结构）。
 - **金额提取 6 模式**（`extractAmount`）：餐饮词+数字 / 收入词+数字 / 动作词+数字+单位 / 交通购物等类别词+数字+单位 / 中文数字+单位（`parseChineseAmount` 兜底）/ 纯数字+单位。
-- **裸数字防护**：`matchesExpenseFallback` 覆盖白名单外新品类（`谷子20`/`手办15`），但排除量词组合（`岁|号|年|月|日|楼|kg|ml|个|张` 等）→ 不误记"身高180""第3名"。
+- **裸数字防护**：`matchesExpenseFallback` 覆盖白名单外新品类（`谷子20`/`手办15`），但排除量词组合（`岁|号|年|月|日|楼|kg|ml|个|张` 等）→ 不误记"身高180""第3名"。**v1.2.6 升级**：`matchesExpenseFallback` 不再死填 `category:'其他'`，改为返回 `category: null`，交给大模型 prompt 5.5 节用常识判断——冰淇淋→餐饮、打车→交通等，不再一股脑归"其他"。
 - **收入判定**：`INCOME_RE` 命中 → 金额取正、分类落"收入"。
 - **日期识别**（`_date` 字段）：`parseDateHint` 抽相对日期写 `YYYY-MM-DD`，交云函数 `add` 的 `date` 落库；无日期词 → `null`（存当天）。
 - **撤回识别**（`parseUndo`）：确定性正则 `UNDO_RE`，不调模型。
@@ -152,6 +152,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 
 设计要点：
 - `buildPrompt` 把正则线索（`regexExpense` / `queryHint` / `undoHint` / `history` / `ctx`）喂给模型，但**最终 decision 权在模型**。
+- **prompt 5.5 节（v1.2.6 新增）**：当正则层抽到金额（`regexExpense` 非空）但 `category` 为 `null` 时，强制要求 LLM 用常识判断分类，不再死填"其他"。同时在 `parseExpense.js` 的 `CATEGORY_KEYWORDS.餐饮` 补充了 `冰淇淋/雪糕/冰棍/冰品/哈根达斯/冰激凌`，确保这些词正则层先命中餐饮→不走 5.5，但其他陌生品类词（如"手办"）仍由 LLM 5.5 节兜底。
 - `validateRecord` 校验模型输出：金额超 `MAX_ABS_AMOUNT=1e7`、零、NaN → 退化 chat；`amount:null` → 被动填槽（上层追问）。
 - `VALID_CATEGORIES` / `VALID_QUERY_TYPES` 白名单校验，模型输出非法值回退"其他"/month。
 
@@ -328,7 +329,7 @@ node ci-tools/compile.js upload
 - 这些**不要提交**（属临时产物）。
 - 根目录大量 `*.TODO.md` / `*.log` 是迭代过程记录，可酌情清理或保留作历史参考。
 - `ci-tools/*.log` / `qrcode-*.png` / `preview_qr.png` 是编译/预览产物，已在 `.gitignore` 或应忽略。
-- 最新业务 commit：`904f766`（金额长尾 + OCR 默认支出 + 明细本月口径 + list 月边界测试）已涵盖近期修复。
+- 最新业务 commit：`01e787f`（大模型分类兜底 + travelRecord 同步地理编码重构）已涵盖近期修复。
 
 ---
 
