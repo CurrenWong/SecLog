@@ -18,6 +18,7 @@ const CATEGORY_KEYWORDS = {
   餐饮: ['午饭', '午餐', '早饭', '早餐', '晚饭', '晚餐', '饭', '吃', '餐', '喝', '奶茶', '咖啡', '餐厅', '火锅', '小吃', '快餐', '外卖',
         // Fix #3: 英文/品牌别名
         'starbucks', '星巴克', 'kfc', '肯德基', 'mcdonald', '麦当劳', '麦门', 'burgerking', '汉堡王', '赛百味', 'pizza', '必胜客', '瑞幸', 'luckin', '蜜雪', '喜茶', '奈雪', '一点点', 'coco',
+        '冰淇淋', '雪糕', '冰棍', '冰品', '哈根达斯', '冰激凌',
         ],
   交通: ['打车', '地铁', '公交', '车', '油', '停车', '高铁', '火车', '飞机', '机票', '滴滴', 'taxi', 'bus', 'subway', 'metro', 'uber', 'lyft', 'tram', 'train', 'flight', '顺风车', '拼车', '自驾', '过路费', '高速费', '加油'],
   购物: ['买', '购', '衣服', '鞋', '包', '数码', '手机', '电脑', '淘宝', '京东', '超市', '网购', '快递'],
@@ -177,7 +178,7 @@ function parseExpense(text) {
     const m = text.match(/(\d+(?:\.\d+)?)\s*$/i)
     if (m) {
       const amount = -Math.abs(parseFloat(m[1]))
-      return { amount, category: '其他', note: stripAmount(text), _date: parseDateHint(text) }
+      return { amount, category: null, note: stripAmount(text), _date: parseDateHint(text) }
     }
   }
 

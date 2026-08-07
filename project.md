@@ -104,7 +104,7 @@ SecLog/                              ← 微信开发者工具打开此目录（
 
 ```
 选图(wx.chooseMedia, sizeType:['original'])
-  → wx.compressImage(最长边1024, quality 80)  ← 大图 OCR 易超时，先压缩
+  → wx.compressImage(最长边480, quality 50)   ← 大图 OCR 易超时，先压缩；sizeType:['original'] 让系统不压缩，二次压缩一手包办，避免两次有损叠加
   → wx.cloud.uploadFile(ocr_tmp/<时间戳>.ext)
   → miaojiRecord(ocr, {imageUrl: fileID})
       云函数内 fetchAsBase64DataUrl(fileID)
@@ -377,6 +377,7 @@ node ci-tools/compile.js upload
 **独立函数**，不依赖 `miaojiRecord` 的任何代码。
 - `functionRootPath`: `cloudfunctions/` → 自动识别 `travelRecord/` 子目录
 - 入口：`index.main`，按 `event.action` 分发
+- 所有写操作（addJournal/saveMultiDay 等）**自动触发相邻地点驾车距离计算**（同步，`computeDistances` 内嵌地理编码，不静默异步）
 
 | action | 参数 | 说明 |
 |---|---|---|
@@ -385,11 +386,17 @@ node ci-tools/compile.js upload
 | `deleteTrip` | `tripId` | 删除旅程（级联删除所有日记） |
 | `listTrips` | `page, limit` | 旅程列表（倒序） |
 | `getTrip` | `tripId` | 旅程详情 + 所有日记（按 day/time 正序） |
-| `addJournal` | `tripId, day, date, time, title, location, content, photos` | 新增日记（自动更新旅程 entryCount/photoCount） |
+| `addJournal` | `tripId, day, date, time, title, location, content, photos` | 新增日记（自动更新旅程 entryCount/photoCount，触发相邻距离计算） |
 | `updateJournal` | `journalId, day, date, time, title, location, content, photos` | 更新日记 |
 | `deleteJournal` | `journalId` | 删除日记（自动更新旅程统计） |
 | `listJournals` | `tripId, sort` | 获取旅程的所有日记 |
 | `parseNaturalLanguage` | `text` | AI 自然语言解析（deepseek-v4-flash），提取日期/时间/标题/地点/内容 |
+| `parseMultiDay` | `text` | AI 批量解析多日行程（返回 JSON 数组，不走数据库） |
+| `saveMultiDay` | `tripTitle, tripStartDate, tripEndDate, tripLocation, journals` | 批量保存多日行程（自动创建旅程 + 写入日记 + 同步触发相邻距离计算） |
+| `geocode` | `address` | 地理编码（包装 `smartGeocode`，自动判断城市 + 腾讯地图 API + AI 兜底坐标） |
+| `calcDistance` | `from, to` | 驾车距离计算（腾讯地图路线规划 API） |
+
+> **关键设计**：`computeDistances` 是同步的——先对无坐标的 location 执行 `smartGeocode`（AI 判断城市→腾讯地图 API→AI 兜底坐标），坐标回写数据库后，再调用腾讯地图驾车路线 API 算相邻距离。`saveMultiDay` 和 `addJournal` 都同步触发，不异步。`smartGeocode` 与 `geocode` 共享同一套逻辑（`geocode` 是对 `smartGeocode` 的简单包装）。
 
 ### 10.3 前端页面（独立于记账页）
 

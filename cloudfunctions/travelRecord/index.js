@@ -141,21 +141,45 @@ async function computeDistances(entries) {
   const key = process.env.TENCENT_MAP_KEY
   if (!key) return entries
 
-  // 找出需要计算（无缓存）的相邻条目
+  // 先把 location 字符串解析为对象
+  for (const e of entries) {
+    if (typeof e.location === 'string') {
+      try { e.location = JSON.parse(e.location) } catch (e2) { e.location = null }
+    }
+  }
+
+  // 第 1 步：对没有坐标但有地名的地点进行地理编码（使用 AI 智能地理编码）
+  const geocodePromises = entries.map(async (entry) => {
+    if (!entry.location || !entry.location.name) return
+    if (entry.location.latitude && entry.location.longitude) return
+    try {
+      const geoResult = await smartGeocode(entry.location.name, key)
+      if (geoResult.success) {
+        entry.location.latitude = geoResult.latitude
+        entry.location.longitude = geoResult.longitude
+        // 坐标存回数据库
+        await db.collection(JOURNALS).doc(entry._id).update({
+          data: { location: JSON.stringify(entry.location) },
+        }).catch((e) => console.error('保存坐标失败', entry._id, e))
+      }
+    } catch (e) {
+      console.error('geocode failed for', entry.location.name, e)
+    }
+  })
+  await Promise.all(geocodePromises)
+
+  // 第 2 步：找出需要计算距离的相邻条目
   const needCalc = []
   for (let i = 0; i < entries.length - 1; i++) {
     const from = entries[i].location
     const to = entries[i + 1].location
     if (!from || !to || !from.latitude || !from.longitude || !to.latitude || !to.longitude) continue
-
-    // 已有缓存（从数据库读取的 distanceToNext）
+    // 已有缓存跳过
     if (entries[i].distanceToNext) continue
-
     needCalc.push({ index: i, from, to })
   }
 
   if (needCalc.length > 0) {
-    // 并行调用腾讯地图 API 计算驾车距离
     const promises = needCalc.map(async ({ index, from, to }) => {
       const fromStr = `${from.latitude},${from.longitude}`
       const toStr = `${to.latitude},${to.longitude}`
@@ -211,54 +235,6 @@ async function computeDistances(entries) {
  * 批量解析的日记只有 location.name（地名），没有坐标
  * 需要先地理编码获取坐标，再计算驾车距离
  */
-async function computeDistancesAfterSave(tripId, journalIds) {
-  const key = process.env.TENCENT_MAP_KEY
-  if (!key) return
-
-  // 1. 获取所有日记（按 day/time 排序）
-  const filter = ownerFilter()
-  if (!filter) return
-
-  const res = await db.collection(JOURNALS)
-    .where({ tripId, ...filter })
-    .orderBy('day', 'asc')
-    .orderBy('time', 'asc')
-    .get()
-
-  const entries = res.data || []
-  if (entries.length < 2) return
-
-  // 2. 对没有坐标但 name 不为空的 location 进行地理编码
-  const geocodePromises = entries.map(async (entry) => {
-    if (typeof entry.location === 'string') {
-      try { entry.location = JSON.parse(entry.location) } catch (e) { entry.location = null }
-    }
-    if (!entry.location || !entry.location.name) return entry
-    // 已有坐标不重复编码
-    if (entry.location.latitude && entry.location.longitude) return entry
-    // 优先尝试腾讯地图 API 地理编码
-    try {
-      const geoResult = await geocodeByTencent(entry.location.name, key)
-      if (geoResult.success) {
-        entry.location.latitude = geoResult.latitude
-        entry.location.longitude = geoResult.longitude
-        // 坐标存回数据库
-        await db.collection(JOURNALS).doc(entry._id).update({
-          data: { location: JSON.stringify(entry.location) },
-        })
-      }
-    } catch (e) {
-      console.error('geocode failed for', entry.location.name, e)
-    }
-    return entry
-  })
-
-  await Promise.all(geocodePromises)
-
-  // 3. 计算相邻地点距离
-  await computeDistances(entries)
-}
-
 // ========== 日记 CRUD ==========
 
 async function addJournal({ tripId, day, date, time, title, location, content, photos }) {
@@ -536,12 +512,11 @@ async function geocodeByTencent(addrStr, key) {
   return { success: false, error: `地理编码失败: ${result.message}`, status: result.status }
 }
 
-async function geocode({ address }) {
-  if (!address) return { success: false, error: 'address 必填' }
-
-  const key = process.env.TENCENT_MAP_KEY
-
-  // 方案一：先让 AI 判断地点所在城市，拼上城市名再调腾讯地图 API
+/**
+ * AI 智能地理编码：先让 AI 判断城市 → 拼城市名调腾讯地图 → 失败再调 AI 估算坐标
+ */
+async function smartGeocode(addrStr, key) {
+  // 方案一：AI 判断城市 + 腾讯地图 API
   if (key) {
     try {
       const ai = tcbApp.ai()
@@ -552,10 +527,10 @@ async function geocode({ address }) {
           role: 'user',
           content: `你是一个地理助手。请判断以下地点所在的城市名称。
 只返回 JSON，不要多余文字。
-如果知道所在城市，返回: {"city": "城市名", "address": "${address}"}
-如果不确定，返回: {"city": "", "address": "${address}"}
+如果知道所在城市，返回: {"city": "城市名", "address": "${addrStr}"}
+如果不确定，返回: {"city": "", "address": "${addrStr}"}
 
-地点名称：${address}`,
+地点名称：${addrStr}`,
         }],
       })
 
@@ -563,18 +538,16 @@ async function geocode({ address }) {
       try {
         const parsed = JSON.parse(cityResult.text.trim().match(/\{[\s\S]*\}/)[0])
         city = (parsed.city || '').trim()
-      } catch (e) {
-        // AI 返回格式异常，忽略城市前缀
-      }
+      } catch (e) { /* AI 返回格式异常，忽略城市前缀 */ }
 
       // 优先尝试带城市前缀的地址
-      const fullAddr = city ? `${city}${address}` : address
+      const fullAddr = city ? `${city}${addrStr}` : addrStr
       const mapResult = await geocodeByTencent(fullAddr, key)
       if (mapResult.success) return mapResult
 
-      // 如果带城市前缀反而失败，再试一次不带城市前缀的
+      // 带城市前缀失败，再试一次不带城市前缀的
       if (city) {
-        const fallbackResult = await geocodeByTencent(address, key)
+        const fallbackResult = await geocodeByTencent(addrStr, key)
         if (fallbackResult.success) return fallbackResult
       }
     } catch (err) {
@@ -594,7 +567,7 @@ async function geocode({ address }) {
 如果知道该地点的坐标，返回 JSON: {"latitude": 纬度, "longitude": 经度}
 如果不知道或不确定，返回: {"error": "unknown"}
 
-地点名称：${address}`,
+地点名称：${addrStr}`,
       }],
     })
 
@@ -607,7 +580,7 @@ async function geocode({ address }) {
           success: true,
           latitude: parsed.latitude,
           longitude: parsed.longitude,
-          title: address,
+          title: addrStr,
           address: '',
         }
       }
@@ -616,6 +589,12 @@ async function geocode({ address }) {
   } catch (err) {
     return { success: false, error: 'AI 坐标估算失败: ' + err.message }
   }
+}
+
+async function geocode({ address }) {
+  if (!address) return { success: false, error: 'address 必填' }
+  const key = process.env.TENCENT_MAP_KEY
+  return await smartGeocode(address, key)
 }
 
 // ========== 驾车距离计算 ==========
@@ -843,11 +822,6 @@ async function saveMultiDay({ tripTitle, tripStartDate, tripEndDate, tripLocatio
       endDate: tripEndDate,
       updatedAt: now,
     },
-  })
-
-  // 4. 触发相邻地点距离计算（异步，不阻塞返回）
-  computeDistancesAfterSave(tripId, journals).catch((e) => {
-    console.error('saveMultiDay computeDistancesAfterSave error:', e)
   })
 
   return {
