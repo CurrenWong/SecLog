@@ -1,17 +1,15 @@
 /* pages/chatBot/chatBot.wxss */
 
-/* 整页 flex 纵向，占满屏幕，避免 tab 切换后内容超长 */
+/* 整页：min-height 不固定 100vh，让 adjust-position=true 时内容能往上推到键盘上方不被裁 */
 .page {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 100vh;
   box-sizing: border-box;
-  overflow: hidden;
 }
-/* 内容区：tab-bar 之下，flex:1 撑满，agent-ui 内部自行滚动 */
+/* 内容区：固定高度 = 视口 - tabbar，agent-ui 在里面 100%，保证 layout 稳定 */
 .tab-content {
-  flex: 1;
-  min-height: 0; /* 关键：允许 flex 子项收缩，内部滚动才生效 */
+  height: calc(100vh - 88rpx);
   position: relative;
 }
 /* 记账 tab 内的 agent-ui 容器填满内容区 */
@@ -221,13 +219,12 @@
   }
 }
 
-/* 顶部双 Tab */
+/* 顶部双 Tab：不用 sticky，键盘弹起时跟随页面一起上推（参考模板行为） */
 .tab-bar {
   display: flex;
   background: #fff;
   border-bottom: 1rpx solid #eee;
-  position: sticky;
-  top: 0;
+  position: relative;
   z-index: 50;
 }
 .tab-item {
