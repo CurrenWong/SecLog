@@ -3,6 +3,9 @@
 App({
   globalData: {
     userInfo: null, // { openid, unionid, avatarUrl, nickName, registeredAt }
+    // 小程序前端版本号（与 ci-tools/.env 的 VERSION 保持一致，发版时同步修改）
+    // 用于在页面上展示，方便真机扫码核验体验版是否为目标版本
+    version: '1.4.4',
   },
 
   onLaunch: function () {

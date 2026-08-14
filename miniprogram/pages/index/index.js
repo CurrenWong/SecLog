@@ -4,6 +4,7 @@ Page({
     recent: [],
     loading: true,
     avatarUrl: '',
+    versionText: '',
     _fetching: false, // 防重复调用
   },
 
@@ -12,6 +13,11 @@ Page({
     // 同步头像（个人中心改了后回到首页实时更新）
     const info = wx.getStorageSync('userInfo') || {}
     this.setData({ avatarUrl: info.avatarUrl || '' })
+    // 展示版本号，便于真机扫码核验体验版
+    const app = getApp()
+    if (app && app.globalData) {
+      this.setData({ versionText: app.globalData.version || '' })
+    }
   },
 
   loadData() {

@@ -70,4 +70,7 @@
 
   <!-- 引导入口 -->
   <view class="guide-entry" bind:tap="goGuide">如何使用秒记账 ></view>
+
+  <!-- 版本号（行内样式，便于真机扫码核验体验版）-->
+  <view wx:if="{{versionText}}" style="text-align:center;font-size:22rpx;color:#b0b3b8;padding:24rpx 0 40rpx;letter-spacing:1rpx;">v{{versionText}}</view>
 </view>
