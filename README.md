@@ -27,7 +27,7 @@
 - ↩️ **撤回 / 更正**："记错了" 撤回最近一笔；"想起来错了，是60" 更正金额
 - 📊 **首页汇总**：今日 / 本月收支 + 最近 5 笔，下拉刷新
 - 🛡️ **误记防护**：裸数字（"我身高180""墙高3块砖"）不记账；含消费意图词（"午饭38"）才记
-- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数 `cloud.ai()` + `glm-5.3-flash` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、**默认记为支出**、可一键切换收入/支出防错账）再入库。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
+- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数调 **DeepSeek 视觉模型**（OpenAI 兼容 HTTP API，`api.deepseek.com`）识别金额/商家/类别，弹出确认卡片（金额可改、**默认记为支出**、可一键切换收入/支出防错账）再入库。API Key 通过云函数环境变量 `DEEPSEEK_API_KEY` 注入（不进代码）。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
 - 👤 **登录 + 个人中心**（已上线）：进入自动静默登录（云函数 `login` 取 openid/unionid，落地 `users` 集合）；个人中心可改头像（chooseAvatar 上传 `avatars/`）/昵称、看本月汇总与笔数、退出登录
 - 📋 **记账明细页**（已上线）：按**本月**（自然月，北京时间月边界，与查账面板口径一致）列出全部记录，支持编辑（金额/类别/备注/收入支出方向）与删除，数据按 openid 隔离
 
@@ -211,7 +211,7 @@ npm i -g @cloudbase/cli
 | 分类明细（"餐饮明细"只显示该类别） | ✅ 已上线（1.0.9） |
 | 拼音/英文输入识别（newnew100） | ✅ 已上线（1.0.6） |
 | 模型降级失败行为（不反问，直接执行） | ✅ 已上线（1.0.7） |
-| 拍照记账 | ✅ 已上线（云函数 cloud.ai() + glm-5.3-flash 多模态识别） |
+| 拍照记账 | ✅ 已上线（云函数调 DeepSeek 视觉模型，OpenAI 兼容 HTTP API，key 走环境变量） |
 | 登录 + 个人中心 | ✅ 已上线（静默登录 + users 集合 + 头像/昵称编辑） |
 | 记账明细页 | ✅ 已上线（列表 / 编辑 / 删除，openid 隔离） |
 | 旅游记录模块 | ✅ 已上线（独立 travelRecord 云函数 + 4 页：旅程列表/详情/日记编辑/旅程编辑） |
@@ -230,8 +230,9 @@ npm i -g @cloudbase/cli
 ## ⚠️ 部署提醒（改完必看）
 
 - **云函数改完必须重传**：`miaojiRecord` 的 `ocr`/`login`/`updateProfile` 是新增 action，已在 `seclog-d1g8no5pc45e643aa` 环境部署过；但**本地改了 ≠ 线上跑新版**，每次改云函数代码都要 `./uploadCloudFunction.sh` 重新上传（见「云函数部署」一节）。
+- **拍照记账视觉模型（DeepSeek）**：`ocr` action 调 `https://api.deepseek.com/chat/completions`（OpenAI 兼容），**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**（控制台 → 云函数 → 配置 → 环境变量），缺了会返回 `AI_UNAVAILABLE`。模型名默认 `deepseek-chat`，可用环境变量 `DEEPSEEK_MODEL` 覆盖。Key 绝不进代码仓库（守卫测试会拦截 `sk-` 硬编码）。
 - **意图识别硬规则（1.0.7 起）**：正则命中 `regexExpense`/`queryHint`/`undoHint` 时，**无论模型说什么/是否失败，都强制执行对应操作**（doAdd/tryQuery/tryUndo）。目的是杜绝"模型幻觉已记账但代码没写库"；模型角色从唯一决策者变为"正则未覆盖场景的兜底"。
-- **wx-server-sdk 版本**：`cloud.ai()` 通道需要 `wx-server-sdk >= 3.x`，老版本 2.6.3 无此 API，会在 `ocr` 时返回 `AI_UNAVAILABLE`。
+- **wx-server-sdk 版本**：云函数数据库/存储操作需要 `wx-server-sdk`，老版本 2.6.3 缺部分 API；保持 `>= 3.x`。
 - **前端静默登录**：`app.js` 在 `onLaunch` 调 `miaojiRecord(login)`；若未部署 `login` action，个人中心会拿不到 openid 但记账仍按 openid 隔离正常工作。
 - **分类明细**：1.0.9 起"餐饮明细"只显示餐饮类记录（之前返回全部类别，是 bug）。
 - **multi_record 与正则的边界**：`parseExpense.js` 必须导出 `parseExpenses`（之前漏导出导致 `parseExpenses is not a function`），且 `classifyIntent` 的 `opts` 必须解构 `regexExpenses`（之前漏解构导致 `ReferenceError` 被 catch 吞掉、整条链路静默返回 null）。改这两块时务必跑 `tests/extractByModel.test.js` 验证。
@@ -256,7 +257,7 @@ node ci-tools/scripts/realOcrTest.js --strict
 ```
 
 - **fixture**：`ci-tools/fixtures/alipay_bill_detail.jpg`（支付宝账单详情页，git 跟踪，作为永久回归基线）
-- **云函数**：`miaojiRecord` 的 `ocr` action（`cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`）接受 `imageUrl`（cloud:// fileID 或 https URL），内部 `fetchAsBase64DataUrl` 转 base64 后调 `@cloudbase/node-sdk` 的 `app.ai()` 多模态通道（当前模型 `glm-5.3-flash`），已部署到 `seclog-d1g8no5pc45e643aa`
+- **云函数**：`miaojiRecord` 的 `ocr` action（`cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`）接受 `imageUrl`（cloud:// fileID 或 https URL），内部 `fetchAsBase64DataUrl` 转 base64 后调 **DeepSeek OpenAI 兼容 API**（`https://api.deepseek.com/chat/completions`，模型默认 `deepseek-chat`，可用环境变量 `DEEPSEEK_MODEL` 覆盖），已部署到 `seclog-d1g8no5pc45e643aa`。**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**，否则 `ocr` 返回 `AI_UNAVAILABLE`
 - **断言**：`amount≈76.80` / `category∈{娱乐,其他}` / `date` 含 `2026-07-31` / `merchant` 含「影城」——验证新 prompt 正确忽略干扰项（时间数字、积分、抵扣券、状态文字），从「商品说明」字段取商家
 - **费用**：每次调用约 4-15s + 模型 token（生产 CloudBase 资源包已购，按需计费）
 - **注意**：脚本**不进 jest 默认套件**（避免每次跑单测都烧 token + 依赖云凭证）。手动跑或 CI 可选门控。

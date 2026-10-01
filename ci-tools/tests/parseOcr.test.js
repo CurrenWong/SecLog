@@ -10,17 +10,23 @@ const { parseOcrResponse, extractJsonString, CATEGORY_ENUM } = require('../../cl
 // 回归防护：视觉 OCR 必须用真多模态模型，禁止用纯文本模型（hunyuan-2.0-instruct=hy3）。
 // 2026-08-01 实测：用 hunyuan-2.0-instruct 做视觉 OCR 时图片被忽略，模型幻觉出随机错的
 // 商家/金额/日期（如返回"麦当劳/36.5/2024-05-20"）。
-// 2026-10-01 模型切换：qwen3.5-plus → glm-5.3-flash（cloudbase 组真多模态，速度/精度更优）。
+// 2026-10-01 模型切换：glm-5.3-flash → DeepSeek（OpenAI 兼容 HTTP API，key 走环境变量）。
 describe('视觉 OCR 模型配置守卫', () => {
   const indexSrc = fs.readFileSync(
     path.resolve(__dirname, '../../cloudfunctions/miaojiRecord/index.js'),
     'utf8'
   )
-  test('extractFromImage 使用真多模态模型 glm-5.3-flash（非纯文本 hunyuan）', () => {
-    expect(indexSrc).toMatch(/glm-5\.3-flash/)
+  test('extractFromImage 走 DeepSeek OpenAI 兼容 API（非纯文本 hunyuan，key 不硬编码）', () => {
+    expect(indexSrc).toMatch(/api\.deepseek\.com\/chat\/completions/)
+    // 模型名从环境变量读取，不允许硬编码 'glm-5.3-flash' / 'qwen' 等 cloudbase 组模型
+    expect(indexSrc).not.toMatch(/glm-5\.3-flash/)
+    expect(indexSrc).not.toMatch(/qwen3?\.5-(flash|plus)/)
     // 禁止出现纯文本视觉模型（会幻觉）
     expect(indexSrc).not.toMatch(/hunyuan-2\.0-instruct[^'"]*'\)?\s*[,)]/)
     expect(indexSrc).not.toContain("'hunyuan-exp'")
+    // ⚠️ 关键：API Key 必须来自环境变量，绝不能硬编码进代码仓库
+    expect(indexSrc).not.toMatch(/sk-[a-zA-Z0-9]{20,}/)
+    expect(indexSrc).toMatch(/process\.env\.DEEPSEEK_API_KEY/)
   })
   test('视觉 OCR 支持 base64 data-URL 直传（绕过 fileID 临时 URL）', () => {
     expect(indexSrc).toMatch(/data:image/)

@@ -1,15 +1,10 @@
 // 秒记 miaojiRecord 云函数
 // 负责记账数据的增 / 查 / 删 / 汇总 / ocr / 登录
 const cloud = require('wx-server-sdk')
-const tcb = require('@cloudbase/node-sdk')
 
 cloud.init({
   env: 'seclog-d1g8no5pc45e643aa',
 })
-
-// 服务端 AI 走 @cloudbase/node-sdk（wx-server-sdk 无 cloud.ai()）
-// 文档：@cloudbase/node-sdk >= 3.16.0 才有 app.ai() 多模态通道
-const tcbApp = tcb.init({ env: 'seclog-d1g8no5pc45e643aa' })
 
 const db = cloud.database()
 const _ = db.command
@@ -115,36 +110,48 @@ async function extractFromImage(imageRef) {
     }
   }
 
-  const ai = tcbApp.ai()
-  if (!ai) {
-    return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 @cloudbase/node-sdk 未初始化 AI 通道' }
+  // ⚠️ 视觉 OCR 模型：DeepSeek（OpenAI 兼容 HTTP API，2026-10-01 切换，弃用 cloudbase 组）
+  // - API Key 从环境变量 DEEPSEEK_API_KEY 读取（由云函数环境变量注入，绝不硬编码进代码）
+  // - 模型名默认 deepseek-chat（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖
+  // - hunyuan-2.0-instruct(=hy3) 纯文本模型，传图被忽略 → 幻觉错值（历史教训，绝不用）
+  // content 顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
+  const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
+  const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat'
+  if (!DEEPSEEK_API_KEY) {
+    return { success: false, code: 'AI_UNAVAILABLE', message: '未配置 DEEPSEEK_API_KEY 环境变量' }
   }
-  // ⚠️ 视觉 OCR 模型选型（已实测验证，2026-08-01 初版；2026-10-01 切换 glm-5.3-flash）：
-  // - hunyuan-2.0-instruct(=hy3) 纯文本模型，传图被忽略 → 幻觉错值（绝对不能用）
-  // - qwen3.5-flash 在 cloudbase 组网关下返回 400（模型 id 不被接受，勿用）
-  // - qwen3.5-plus ✅ 实测可用：cloudbase 组 + 真多模态 + 1.7s 返回准确识别（旧默认）
-  // - glm-5v-turbo 在 cloudbase 组未启用（DescribeAIModels 无），暂不可用
-  // - glm-5.3-flash ✅ 现默认：cloudbase 组真多模态视觉模型，速度/精度优于 qwen3.5-plus
-  // content 数组顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
-  const model = ai.createModel('cloudbase')
   let res
   let lastErr
-  // 云端 AI 网关偶发 400（限流/鉴权抖动），加重试覆盖（指数退避，最多 3 次）
+  // 云端 API 偶发 5xx/429，加重试覆盖（指数退避，最多 3 次）
   const MAX_RETRY = 3
   for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
     try {
-      res = await model.generateText({
-        model: 'glm-5.3-flash',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'image_url', image_url: { url: dataUrl } },
-              { type: 'text', text: prompt },
-            ],
-          },
-        ],
+      const httpResp = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: DEEPSEEK_MODEL,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'image_url', image_url: { url: dataUrl } },
+                { type: 'text', text: prompt },
+              ],
+            },
+          ],
+        }),
       })
+      if (!httpResp.ok) {
+        const errBody = await httpResp.text()
+        throw Object.assign(new Error(`DeepSeek HTTP ${httpResp.status}: ${errBody.slice(0, 300)}`), {
+          status: httpResp.status,
+        })
+      }
+      res = await httpResp.json()
       lastErr = null
       break
     } catch (e) {
