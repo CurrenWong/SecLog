@@ -151,6 +151,12 @@ const q = db.collection(COLLECTION).where(cond)
 
 ## [GOTCHA-2026-08-01-001] 视觉记账 OCR：hunyuan-2.0-instruct 是纯文本模型，不能做视觉
 
+> **🔄 2026-10-01 更新（重要）**：本 gotcha 的**根因仍然成立**（hy3/hunyuan-2.0-instruct 是纯文本模型，传图会被忽略→视觉幻觉），但**修复方案已变更**。
+> - 2026-08-01 初版修复：改用 `qwen3.5-plus`（cloudbase 组多模态）。
+> - 后续实测 cloudbase 组 `qwen3.5-plus` / `glm-5v-turbo` 在个人版 env 受套餐/网关限制（403/400，见 gotcha #12），**已弃用 cloudbase 组方案**。
+> - **现方案（2026-10-01 起）**：拍照记账 OCR 改用 **DeepSeek OpenAI 兼容 API**（`https://api.deepseek.com/chat/completions`），API Key 走云函数环境变量 `DEEPSEEK_API_KEY`，默认模型 `deepseek-chat`，可用 `DEEPSEEK_MODEL` 覆盖（线上设 `deepseek-flash`）。代码见 `cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`。守卫测试 `parseOcr.test.js` 已更新为断言 `api.deepseek.com/chat/completions` + `process.env.DEEPSEEK_API_KEY` + 不含 `hunyuan-*`。
+> - 下面保留的是**初版排查过程**（qwen3.5-plus/cloudbase 组），作为历史根因记录，**请勿再据此把代码改回 cloudbase 组**。
+
 **现象**：拍照记账（支付宝/微信账单详情页截图）识别结果完全错——返回随机商家（麦当劳/星巴克/
 沙县小吃）、错误金额（36.5/68.5/88）、离谱日期（固定 2024-05-20）。但 `success:true`，前端弹窗
 显示"识别成功"，用户确认后脏数据入库。单测（mock 返回 76.80）全绿，掩盖了真实模型质量问题。
@@ -161,11 +167,12 @@ const q = db.collection(COLLECTION).where(cond)
 所以图片被默默丢弃，模型在**没看到图**的情况下凭 prompt 幻觉出符合 JSON 结构的随机值。
 （之前 gotcha #10 / MEMORY.md 误记成"hunyuan 可做视觉"，2026-08-01 实测纠正。）
 
-**修复**：视觉 OCR 改用真多模态模型 `qwen3.5-plus`（CloudBase 官方 multimodal 文档示例）：
+**初版修复（2026-08-01，已弃用，仅留根因记录）**：视觉 OCR 改用真多模态模型 `qwen3.5-plus`（CloudBase 官方 multimodal 文档示例）：
 - `cloudfunctions/miaojiRecord/index.js`：`ai.createModel('cloudbase')` + `model:'qwen3.5-plus'`
 - 多模态 content 数组：image 在前、text 在后（CloudBase 官方 recipe 推荐写法）
 - `ocr` action 增加 base64 data-URL 直传分支（以 `data:image` 开头时跳过 `getTempFileURL`）
 - 部署用 CloudBase MCP `manageFunctions(updateFunctionCode)`
+> ⚠️ 该 cloudbase 组方案因个人版套餐限制/网关 400 已弃用，现改用 DeepSeek（见文首 2026-10-01 更新标注）。
 
 **关键排查（2026-08-01）**：
 - **API 调用成功，但模型看不到图**：
@@ -187,10 +194,11 @@ const q = db.collection(COLLECTION).where(cond)
   BaseURL + APIKey，绕开 cloudbase 文本端点路由（需要第三方 APIKey）—— **最干净的路径**
 - **直连 DashScope**：在云函数里直接 axios 调用阿里云百炼 multimodal 端点
 
-**为何最终选 `qwen3.5-plus`**：
+**为何最初选 `qwen3.5-plus`（后弃用）**：
 - 通义千问原生多模态，TokenHub 已开通额度，cloudbase 组可调用
 - `hunyuan-2.0-instruct`（纯文本）会让模型"假装成功"+ 返回幻觉 JSON + success:true 蒙混入库，
   导致脏数据
+> ⚠️ 该方案已弃用，现用 DeepSeek（见文首 2026-10-01 更新标注）。
 
 **不跑通也不入库脏数据**：`extractFromImage` 包了 try/catch，调用失败或识别失败
 返回 `AI_CALL_ERROR`（非 success），前端拍照按钮调用时会显示"识别失败，请手动记账"——这是
@@ -205,8 +213,9 @@ gotcha 修复的核心收益：早先用纯文本模型时模型假装成功蒙�
   tcb fn invoke miaojiRecord --env-id seclog-d1g8no5pc45e643aa \
     --params '{"action":"ocr","payload":{"imageUrl":"cloud://seclog-d1g8no5pc45e643aa/ocr_tmp/alipay_bill_detail.jpg"}}'
   ```
-- **守卫测试**：`ci-tools/tests/parseOcr.test.js` 的「视觉 OCR 模型配置守卫」会断言
-  `index.js` 含 `qwen3.5-plus` 且不含 `hunyuan-exp` / `hunyuan-2.0-instruct`，防止有人改回纯文本模型。
+- **守卫测试（2026-10-01 更新）**：`ci-tools/tests/parseOcr.test.js` 的「视觉 OCR 模型配置守卫」会断言
+  `index.js` 含 `api.deepseek.com/chat/completions` + `process.env.DEEPSEEK_API_KEY`，且**不含**
+  `hunyuan-exp` / `hunyuan-2.0-instruct`，防止有人改回纯文本模型或把 Key 硬编码进代码。
 
 **关联**：MEMORY.md gotcha #10（修正为 qwen3.5-plus）、gotcha #12（UpdateAIModel≠TokenHub 开通、
   套餐限制、个人版不支持 glm-5v-turbo）、gotcha #9（改云函数必须重传）。

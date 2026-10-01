@@ -109,7 +109,10 @@ SecLog/                              ← 微信开发者工具打开此目录（
   → miaojiRecord(ocr, {imageUrl: fileID})
       云函数内 fetchAsBase64DataUrl(fileID)
         → cloud:// → getTempFileURL → fetch → base64（不走调用链路，避免 401KB 原图 base64 塞 params）
-        → tcbApp.ai().createModel('cloudbase').generateText({model:'qwen3.5-plus', messages:[{image_url},{text:prompt}]})
+        → 调 DeepSeek OpenAI 兼容 API（https://api.deepseek.com/chat/completions）
+          · API Key 从环境变量 DEEPSEEK_API_KEY 读取（云函数环境变量注入，绝不硬编码进代码）
+          · 模型名默认 deepseek-chat（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖（如线上设 deepseek-flash）
+          · content 顺序：image 在前、text 在后（避免模型把 text 当主任务、图当附件忽略）
         → parseOcrResponse() 容错解析 + 字段归一化
   → 前端确认弹窗（金额可改、**默认支出**、可一键切收入/支出）  ← 防错账：误识别不静默入库
   → miaojiRecord(add)
@@ -165,7 +168,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 - `delete` / `update`：`where({_id, ...owner})` 严格按 owner 隔离。
 - `summary`：今日/本月 income+expense（带符号：expense 负、income 正）。
 - `stats`：按分类聚合（只算 expense），支持 month/range/category；返回 `records` 真实逐笔（前端拼明细用，**绝不编造**）。
-- `ocr`：拍照记账入口，调 `extractFromImage` → `qwen3.5-plus` 多模态识别。
+- `ocr`：拍照记账入口，调 `extractFromImage` → **DeepSeek 视觉模型**（`https://api.deepseek.com/chat/completions`，OpenAI 兼容；API Key 走环境变量 `DEEPSEEK_API_KEY`，默认模型 `deepseek-chat`，可用 `DEEPSEEK_MODEL` 覆盖）。详见 §2.3。
 - `login` / `updateProfile`：用户档案。
 
 **全局约定（改云函数务必遵守）**：
@@ -202,7 +205,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 7. **硬规则兜底**：正则命中即强制执行业务动作，模型只做兜底，杜绝幻觉入库。
 8. **不静默入库脏数据**：OCR 失败返回错误码（`AI_CALL_ERROR` 等），前端提示"识别失败请手动记"，绝不假成功。
 9. **改云函数必须重新部署**（本地改 ≠ 线上跑新版），用 CloudBase MCP `updateFunctionCode`（gotcha #9）。
-10. **视觉 OCR 用真多模态模型**：`qwen3.5-plus`（cloudbase 组）。**绝不用 `hunyuan-2.0-instruct`(hy3)**——它是纯文本，传图被忽略→幻觉错值（gotcha #10/#12）。`qwen3.5-flash` 在 cloudbase 网关返回 400，勿用。`glm-5v-turbo` 个人版套餐未启用。
+10. **视觉 OCR 走 DeepSeek OpenAI 兼容 API**：`https://api.deepseek.com/chat/completions`，API Key 走环境变量 `DEEPSEEK_API_KEY`（不硬编码），默认模型 `deepseek-chat`，可用 `DEEPSEEK_MODEL` 环境变量覆盖（如线上 `deepseek-flash`）。**绝不用 `hunyuan-2.0-instruct`(hy3)**——它是纯文本，传图被忽略→幻觉错值（gotcha #10/#12，根因仍成立）。原 cloudbase 组 `qwen3.5-plus`/`glm-5v-turbo` 方案因个人版套餐限制/网关 400 已弃用，见 GOTCHAS.md `[GOTCHA-2026-08-01-001]` 2026-10-01 更新标注。
 
 ---
 
@@ -227,7 +230,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 
 - **纯函数改动**（parseExpense / fallbackHint / dateRange / deleteResult）：在 `miniprogram/utils/__tests__/` 对应 `*.test.js` 加 `test(...)`，直接 `node` 跑验证。
 - **云函数/意图链路改动**：在 `ci-tools/tests/` 加 `describe` 块。`miaojiRecord.test.js` 已含 add/list/delete/summary/stats/range/月边界/owner 隔离等套件，**新增 action 必加对应 describe**。
-- **OCR 配置守卫**：`tests/parseOcr.test.js` 断言 `index.js` 含 `qwen3.5-plus` 且**不含** `hunyuan-exp`/`hunyuan-2.0-instruct`，防有人改回纯文本模型。
+- **OCR 配置守卫**：`tests/parseOcr.test.js` 断言 `index.js` 含 `api.deepseek.com/chat/completions` 且**不含** `hunyuan-exp`/`hunyuan-2.0-instruct`（纯文本会视觉幻觉），并断言从 `process.env.DEEPSEEK_API_KEY` 读取 Key（防硬编码）。防有人改回纯文本模型或把 Key 写进代码。
 
 ### 5.4 真 OCR 回归（不进 jest 默认套件）
 
@@ -285,7 +288,7 @@ node ci-tools/scripts/realOcrTest.js --strict       # CI 严格模式（失败 e
 | **OCR 全流程 A2** | 拍照→uploadFile→callFunction(ocr)→**确认弹窗出现但暂不记账**（add 未被调）；用户确认→`onOcrConfirm`→doAdd 被调且金额/类别/商家正确、对话流出现 `[已记]` |
 | **OCR 失败分支** | 识别失败→弹窗不出现 / toast 提示，绝不假成功静默入库（见 gotcha #8） |
 | **parseOcrResponse 容错** | 正常 JSON；` ```json ``` ` 剥离；非法 category→「其他」；`amount` 为字符串/缺失→null（触发手动补）；merchant 缺失→空串；多行 JSON |
-| **⚠️ 模型配置守卫** | `index.js` 必须含 `qwen3.5-plus`、**禁止** `hunyuan-2.0-instruct` / `hunyuan-exp`（纯文本会视觉幻觉）；必须支持 base64 data-URL 直传 |
+| **⚠️ 模型配置守卫** | `index.js` 必须含 `api.deepseek.com/chat/completions`、**禁止** `hunyuan-2.0-instruct` / `hunyuan-exp`（纯文本会视觉幻觉）、Key 必须来自 `process.env.DEEPSEEK_API_KEY`（不硬编码）；必须支持 base64 data-URL 直传 |
 
 #### E. 其他纯函数（node:test）
 - `dateRange.test.js`：`computeCurrentMonthDays()` 边界

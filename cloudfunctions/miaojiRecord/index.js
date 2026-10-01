@@ -65,9 +65,12 @@ async function fetchAsBase64DataUrl(ref) {
   return `data:${ct};base64,${buf.toString('base64')}`
 }
 
-// —— 拍照记账：调 CloudBase AI（@cloudbase/node-sdk app.ai() 通道）做多模态小票识别 ——
-// 用 @cloudbase/node-sdk 的 app.ai()（自动内网鉴权，不需要硬编码 key）。
-// 注意：wx-server-sdk 无 cloud.ai()；AI 能力只在 @cloudbase/node-sdk >= 3.16.0 提供。
+// —— 拍照记账：调 DeepSeek OpenAI 兼容 API 做多模态小票识别 ——
+// 方案（2026-10-01 起）：直接 fetch https://api.deepseek.com/chat/completions（OpenAI 兼容）。
+// API Key 从环境变量 DEEPSEEK_API_KEY 读取（云函数环境变量注入，绝不硬编码进代码）。
+// 模型名默认 deepseek-chat（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖（如线上设 deepseek-flash）。
+// 历史：早期用 CloudBase cloud.ai() + cloudbase 组多模态模型，因个人版套餐限制/网关 400 已弃用。
+// 内容顺序：image 在前、text 在后（避免模型把 text 当主任务、图当附件忽略）。
 async function extractFromImage(imageRef) {
   const prompt = [
     '你是一个消费凭证识别助手。识别用户上传的消费图片（小票/发票/支付宝/微信账单详情页/银行 APP 交易截图等），提取记账需要的字段。',
