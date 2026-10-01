@@ -230,7 +230,7 @@ CloudBase MCP → manageFunctions(action=updateFunctionCode, functionRootPath=<�
 ## ⚠️ 部署提醒（改完必看）
 
 - **云函数改完必须重传**：`miaojiRecord` 的 `ocr`/`login`/`updateProfile` 是新增 action，已在 `seclog-d1g8no5pc45e643aa` 环境部署过；但**本地改了 ≠ 线上跑新版**，每次改云函数代码都要通过 **CloudBase MCP `manageFunctions(updateFunctionCode)`** 重新上传（见「云函数部署」一节）。注意 `./uploadCloudFunction.sh` 只部署 demo 的 `quickstartFunctions`，**不部署业务函数**。
-- **拍照记账视觉模型（DeepSeek）**：`ocr` action 调 `https://api.deepseek.com/chat/completions`（OpenAI 兼容），**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**（控制台 → 云函数 → 配置 → 环境变量），缺了会返回 `AI_UNAVAILABLE`。模型名默认 `deepseek-chat`，可用环境变量 `DEEPSEEK_MODEL` 覆盖。Key 绝不进代码仓库（守卫测试会拦截 `sk-` 硬编码）。
+- **拍照记账视觉模型（DeepSeek）**：`ocr` action 调 `https://api.deepseek.com/chat/completions`（OpenAI 兼容），**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**（控制台 → 云函数 → 配置 → 环境变量），缺了会返回 `AI_UNAVAILABLE`。模型名默认 `deepseek-flash`（多模态视觉版），可用环境变量 `DEEPSEEK_MODEL` 覆盖。Key 绝不进代码仓库（守卫测试会拦截 `sk-` 硬编码）。
 - **意图识别硬规则（1.0.7 起）**：正则命中 `regexExpense`/`queryHint`/`undoHint` 时，**无论模型说什么/是否失败，都强制执行对应操作**（doAdd/tryQuery/tryUndo）。目的是杜绝"模型幻觉已记账但代码没写库"；模型角色从唯一决策者变为"正则未覆盖场景的兜底"。
 - **wx-server-sdk 版本**：云函数数据库/存储操作需要 `wx-server-sdk`，老版本 2.6.3 缺部分 API；保持 `>= 3.x`。
 - **前端静默登录**：`app.js` 在 `onLaunch` 调 `miaojiRecord(login)`；若未部署 `login` action，个人中心会拿不到 openid 但记账仍按 openid 隔离正常工作。
@@ -257,7 +257,7 @@ node ci-tools/scripts/realOcrTest.js --strict
 ```
 
 - **fixture**：`ci-tools/fixtures/alipay_bill_detail.jpg`（支付宝账单详情页，git 跟踪，作为永久回归基线）
-- **云函数**：`miaojiRecord` 的 `ocr` action（`cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`）接受 `imageUrl`（cloud:// fileID 或 https URL），内部 `fetchAsBase64DataUrl` 转 base64 后调 **DeepSeek OpenAI 兼容 API**（`https://api.deepseek.com/chat/completions`，模型默认 `deepseek-chat`，可用环境变量 `DEEPSEEK_MODEL` 覆盖），已部署到 `seclog-d1g8no5pc45e643aa`。**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**，否则 `ocr` 返回 `AI_UNAVAILABLE`
+- **云函数**：`miaojiRecord` 的 `ocr` action（`cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`）接受 `imageUrl`（cloud:// fileID 或 https URL），内部 `fetchAsBase64DataUrl` 转 base64 后调 **DeepSeek OpenAI 兼容 API**（`https://api.deepseek.com/chat/completions`，模型默认 `deepseek-flash`，可用环境变量 `DEEPSEEK_MODEL` 覆盖），已部署到 `seclog-d1g8no5pc45e643aa`。**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**，否则 `ocr` 返回 `AI_UNAVAILABLE`
 - **断言**：`amount≈76.80` / `category∈{娱乐,其他}` / `date` 含 `2026-07-31` / `merchant` 含「影城」——验证新 prompt 正确忽略干扰项（时间数字、积分、抵扣券、状态文字），从「商品说明」字段取商家
 - **费用**：每次调用约 4-15s + 模型 token（生产 CloudBase 资源包已购，按需计费）
 - **注意**：脚本**不进 jest 默认套件**（避免每次跑单测都烧 token + 依赖云凭证）。手动跑或 CI 可选门控。

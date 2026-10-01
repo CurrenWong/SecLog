@@ -111,7 +111,7 @@ SecLog/                              ← 微信开发者工具打开此目录（
         → cloud:// → getTempFileURL → fetch → base64（不走调用链路，避免 401KB 原图 base64 塞 params）
         → 调 DeepSeek OpenAI 兼容 API（https://api.deepseek.com/chat/completions）
           · API Key 从环境变量 DEEPSEEK_API_KEY 读取（云函数环境变量注入，绝不硬编码进代码）
-          · 模型名默认 deepseek-chat（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖（如线上设 deepseek-flash）
+          · 模型名默认 deepseek-flash（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖
           · content 顺序：image 在前、text 在后（避免模型把 text 当主任务、图当附件忽略）
         → parseOcrResponse() 容错解析 + 字段归一化
   → 前端确认弹窗（金额可改、**默认支出**、可一键切收入/支出）  ← 防错账：误识别不静默入库
@@ -168,7 +168,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 - `delete` / `update`：`where({_id, ...owner})` 严格按 owner 隔离。
 - `summary`：今日/本月 income+expense（带符号：expense 负、income 正）。
 - `stats`：按分类聚合（只算 expense），支持 month/range/category；返回 `records` 真实逐笔（前端拼明细用，**绝不编造**）。
-- `ocr`：拍照记账入口，调 `extractFromImage` → **DeepSeek 视觉模型**（`https://api.deepseek.com/chat/completions`，OpenAI 兼容；API Key 走环境变量 `DEEPSEEK_API_KEY`，默认模型 `deepseek-chat`，可用 `DEEPSEEK_MODEL` 覆盖）。详见 §2.3。
+- `ocr`：拍照记账入口，调 `extractFromImage` → **DeepSeek 视觉模型**（`https://api.deepseek.com/chat/completions`，OpenAI 兼容；API Key 走环境变量 `DEEPSEEK_API_KEY`，默认模型 `deepseek-flash`，可用 `DEEPSEEK_MODEL` 覆盖）。详见 §2.3。
 - `login` / `updateProfile`：用户档案。
 
 **全局约定（改云函数务必遵守）**：
@@ -205,7 +205,7 @@ app.js onLaunch → silentLogin() → wx.login → miaojiRecord(login)
 7. **硬规则兜底**：正则命中即强制执行业务动作，模型只做兜底，杜绝幻觉入库。
 8. **不静默入库脏数据**：OCR 失败返回错误码（`AI_CALL_ERROR` 等），前端提示"识别失败请手动记"，绝不假成功。
 9. **改云函数必须重新部署**（本地改 ≠ 线上跑新版），用 CloudBase MCP `updateFunctionCode`（gotcha #9）。
-10. **视觉 OCR 走 DeepSeek OpenAI 兼容 API**：`https://api.deepseek.com/chat/completions`，API Key 走环境变量 `DEEPSEEK_API_KEY`（不硬编码），默认模型 `deepseek-chat`，可用 `DEEPSEEK_MODEL` 环境变量覆盖（如线上 `deepseek-flash`）。**绝不用 `hunyuan-2.0-instruct`(hy3)**——它是纯文本，传图被忽略→幻觉错值（gotcha #10/#12，根因仍成立）。原 cloudbase 组 `qwen3.5-plus`/`glm-5v-turbo` 方案因个人版套餐限制/网关 400 已弃用，见 GOTCHAS.md `[GOTCHA-2026-08-01-001]` 2026-10-01 更新标注。
+10. **视觉 OCR 走 DeepSeek OpenAI 兼容 API**：`https://api.deepseek.com/chat/completions`，API Key 走环境变量 `DEEPSEEK_API_KEY`（不硬编码），默认模型 `deepseek-flash`（多模态视觉版），可用 `DEEPSEEK_MODEL` 环境变量覆盖。**绝不用 `hunyuan-2.0-instruct`(hy3)**——它是纯文本，传图被忽略→幻觉错值（gotcha #10/#12，根因仍成立）。原 cloudbase 组 `qwen3.5-plus`/`glm-5v-turbo` 方案因个人版套餐限制/网关 400 已弃用，见 GOTCHAS.md `[GOTCHA-2026-08-01-001]` 2026-10-01 更新标注。
 
 ---
 

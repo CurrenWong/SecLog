@@ -154,7 +154,7 @@ const q = db.collection(COLLECTION).where(cond)
 > **🔄 2026-10-01 更新（重要）**：本 gotcha 的**根因仍然成立**（hy3/hunyuan-2.0-instruct 是纯文本模型，传图会被忽略→视觉幻觉），但**修复方案已变更**。
 > - 2026-08-01 初版修复：改用 `qwen3.5-plus`（cloudbase 组多模态）。
 > - 后续实测 cloudbase 组 `qwen3.5-plus` / `glm-5v-turbo` 在个人版 env 受套餐/网关限制（403/400，见 gotcha #12），**已弃用 cloudbase 组方案**。
-> - **现方案（2026-10-01 起）**：拍照记账 OCR 改用 **DeepSeek OpenAI 兼容 API**（`https://api.deepseek.com/chat/completions`），API Key 走云函数环境变量 `DEEPSEEK_API_KEY`，默认模型 `deepseek-chat`，可用 `DEEPSEEK_MODEL` 覆盖（线上设 `deepseek-flash`）。代码见 `cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`。守卫测试 `parseOcr.test.js` 已更新为断言 `api.deepseek.com/chat/completions` + `process.env.DEEPSEEK_API_KEY` + 不含 `hunyuan-*`。
+> - **现方案（2026-10-01 起）**：拍照记账 OCR 改用 **DeepSeek OpenAI 兼容 API**（`https://api.deepseek.com/chat/completions`），API Key 走云函数环境变量 `DEEPSEEK_API_KEY`，默认模型 `deepseek-flash`（多模态视觉版），可用 `DEEPSEEK_MODEL` 覆盖。代码见 `cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`。守卫测试 `parseOcr.test.js` 已更新为断言 `api.deepseek.com/chat/completions` + `process.env.DEEPSEEK_API_KEY` + 不含 `hunyuan-*`。
 > - 下面保留的是**初版排查过程**（qwen3.5-plus/cloudbase 组），作为历史根因记录，**请勿再据此把代码改回 cloudbase 组**。
 
 **现象**：拍照记账（支付宝/微信账单详情页截图）识别结果完全错——返回随机商家（麦当劳/星巴克/

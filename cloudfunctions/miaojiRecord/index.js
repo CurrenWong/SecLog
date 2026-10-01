@@ -68,7 +68,7 @@ async function fetchAsBase64DataUrl(ref) {
 // —— 拍照记账：调 DeepSeek OpenAI 兼容 API 做多模态小票识别 ——
 // 方案（2026-10-01 起）：直接 fetch https://api.deepseek.com/chat/completions（OpenAI 兼容）。
 // API Key 从环境变量 DEEPSEEK_API_KEY 读取（云函数环境变量注入，绝不硬编码进代码）。
-// 模型名默认 deepseek-chat（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖（如线上设 deepseek-flash）。
+// 模型名默认 deepseek-flash（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖。
 // 历史：早期用 CloudBase cloud.ai() + cloudbase 组多模态模型，因个人版套餐限制/网关 400 已弃用。
 // 内容顺序：image 在前、text 在后（避免模型把 text 当主任务、图当附件忽略）。
 async function extractFromImage(imageRef) {
@@ -115,11 +115,11 @@ async function extractFromImage(imageRef) {
 
   // ⚠️ 视觉 OCR 模型：DeepSeek（OpenAI 兼容 HTTP API，2026-10-01 切换，弃用 cloudbase 组）
   // - API Key 从环境变量 DEEPSEEK_API_KEY 读取（由云函数环境变量注入，绝不硬编码进代码）
-  // - 模型名默认 deepseek-chat（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖
+  // - 模型名默认 deepseek-flash（多模态视觉版），可用环境变量 DEEPSEEK_MODEL 覆盖
   // - hunyuan-2.0-instruct(=hy3) 纯文本模型，传图被忽略 → 幻觉错值（历史教训，绝不用）
   // content 顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
   const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY
-  const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-chat'
+  const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || 'deepseek-flash'
   if (!DEEPSEEK_API_KEY) {
     return { success: false, code: 'AI_UNAVAILABLE', message: '未配置 DEEPSEEK_API_KEY 环境变量' }
   }
