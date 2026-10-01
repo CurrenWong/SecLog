@@ -27,7 +27,7 @@
 - ↩️ **撤回 / 更正**："记错了" 撤回最近一笔；"想起来错了，是60" 更正金额
 - 📊 **首页汇总**：今日 / 本月收支 + 最近 5 笔，下拉刷新
 - 🛡️ **误记防护**：裸数字（"我身高180""墙高3块砖"）不记账；含消费意图词（"午饭38"）才记
-- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数 `cloud.ai()` + `qwen3.5-plus` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、**默认记为支出**、可一键切换收入/支出防错账）再入库。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
+- 📷 **拍照记账**（已上线）：对话页浮动「拍照记账」按钮，选小票/发票/支付宝微信账单详情页后由云函数 `cloud.ai()` + `glm-5.3-flash` 多模态识别金额/商家/类别，弹出确认卡片（金额可改、**默认记为支出**、可一键切换收入/支出防错账）再入库。真 OCR 回归测试见 `ci-tools/scripts/realOcrTest.js`（fixture：`ci-tools/fixtures/alipay_bill_detail.jpg`）
 - 👤 **登录 + 个人中心**（已上线）：进入自动静默登录（云函数 `login` 取 openid/unionid，落地 `users` 集合）；个人中心可改头像（chooseAvatar 上传 `avatars/`）/昵称、看本月汇总与笔数、退出登录
 - 📋 **记账明细页**（已上线）：按**本月**（自然月，北京时间月边界，与查账面板口径一致）列出全部记录，支持编辑（金额/类别/备注/收入支出方向）与删除，数据按 openid 隔离
 
@@ -211,7 +211,7 @@ npm i -g @cloudbase/cli
 | 分类明细（"餐饮明细"只显示该类别） | ✅ 已上线（1.0.9） |
 | 拼音/英文输入识别（newnew100） | ✅ 已上线（1.0.6） |
 | 模型降级失败行为（不反问，直接执行） | ✅ 已上线（1.0.7） |
-| 拍照记账 | ✅ 已上线（云函数 cloud.ai() + qwen3.5-plus 多模态识别） |
+| 拍照记账 | ✅ 已上线（云函数 cloud.ai() + glm-5.3-flash 多模态识别） |
 | 登录 + 个人中心 | ✅ 已上线（静默登录 + users 集合 + 头像/昵称编辑） |
 | 记账明细页 | ✅ 已上线（列表 / 编辑 / 删除，openid 隔离） |
 | 旅游记录模块 | ✅ 已上线（独立 travelRecord 云函数 + 4 页：旅程列表/详情/日记编辑/旅程编辑） |
@@ -256,7 +256,7 @@ node ci-tools/scripts/realOcrTest.js --strict
 ```
 
 - **fixture**：`ci-tools/fixtures/alipay_bill_detail.jpg`（支付宝账单详情页，git 跟踪，作为永久回归基线）
-- **云函数**：`visionProbe`（`cloudfunctions/visionProbe/index.js`）接受 `imageUrl` + `prompt` 参数，已部署到 `seclog-d1g8no5pc45e643aa`
+- **云函数**：`miaojiRecord` 的 `ocr` action（`cloudfunctions/miaojiRecord/index.js` 的 `extractFromImage`）接受 `imageUrl`（cloud:// fileID 或 https URL），内部 `fetchAsBase64DataUrl` 转 base64 后调 `@cloudbase/node-sdk` 的 `app.ai()` 多模态通道（当前模型 `glm-5.3-flash`），已部署到 `seclog-d1g8no5pc45e643aa`
 - **断言**：`amount≈76.80` / `category∈{娱乐,其他}` / `date` 含 `2026-07-31` / `merchant` 含「影城」——验证新 prompt 正确忽略干扰项（时间数字、积分、抵扣券、状态文字），从「商品说明」字段取商家
 - **费用**：每次调用约 4-15s + 模型 token（生产 CloudBase 资源包已购，按需计费）
 - **注意**：脚本**不进 jest 默认套件**（避免每次跑单测都烧 token + 依赖云凭证）。手动跑或 CI 可选门控。

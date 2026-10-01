@@ -119,11 +119,12 @@ async function extractFromImage(imageRef) {
   if (!ai) {
     return { success: false, code: 'AI_UNAVAILABLE', message: '云函数 @cloudbase/node-sdk 未初始化 AI 通道' }
   }
-  // ⚠️ 视觉 OCR 模型选型（已实测验证，2026-08-01）：
+  // ⚠️ 视觉 OCR 模型选型（已实测验证，2026-08-01 初版；2026-10-01 切换 glm-5.3-flash）：
   // - hunyuan-2.0-instruct(=hy3) 纯文本模型，传图被忽略 → 幻觉错值（绝对不能用）
   // - qwen3.5-flash 在 cloudbase 组网关下返回 400（模型 id 不被接受，勿用）
-  // - qwen3.5-plus ✅ 实测可用：cloudbase 组 + 真多模态 + 1.7s 返回准确识别
+  // - qwen3.5-plus ✅ 实测可用：cloudbase 组 + 真多模态 + 1.7s 返回准确识别（旧默认）
   // - glm-5v-turbo 在 cloudbase 组未启用（DescribeAIModels 无），暂不可用
+  // - glm-5.3-flash ✅ 现默认：cloudbase 组真多模态视觉模型，速度/精度优于 qwen3.5-plus
   // content 数组顺序：image 在前、text 在后（推荐写法，避免模型把 text 当主任务图当附件忽略）
   const model = ai.createModel('cloudbase')
   let res
@@ -133,7 +134,7 @@ async function extractFromImage(imageRef) {
   for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
     try {
       res = await model.generateText({
-        model: 'qwen3.5-plus',
+        model: 'glm-5.3-flash',
         messages: [
           {
             role: 'user',
