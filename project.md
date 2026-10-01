@@ -51,7 +51,6 @@ SecLog/                              ← 微信开发者工具打开此目录（
 │   │   ├── parseOcr.js              ← OCR 返回的 JSON 容错解析 + 字段归一化（纯函数，云函数+测试共用）
 │   │   ├── config.json / package.json
 │   ├── ocrProbe/ / visionProbe/     ← 早期 OCR 探针（visionProbe 支持 --prompt 真 OCR 回归测试用）
-│   └── quickstartFunctions/         ← 早期压测 demo，与产品无关，可删
 ├── ci-tools/                       ← ⭐⭐ 本地测试 + 编译（Jest + miniprogram-ci）
 │   ├── compile.js                   ← 微信 CLI 编译，出真机预览/上传二维码（方案 A2：babel 转译后上传 .build 副本）
 │   ├── jest.config.js
@@ -65,12 +64,12 @@ SecLog/                              ← 微信开发者工具打开此目录（
 ├── images/                          ← 小程序静态图（app-logo / default-avatar）
 ├── project.config.json              ← 微信开发者工具项目配置
 ├── project.private.config.json      ← 本地私有（appid 等，不提交）
-├── uploadCloudFunction.sh           ← ⚠️ 只部署 quickstartFunctions（demo），不部署 miaojiRecord！
+├── uploadCloudFunction.sh           ← ⚠️ 只部署早期 demo 函数，不部署 miaojiRecord！
 ├── GOTCHAS.md / README.md / project.md
 └── *.TODO.md / *.log / b64_oneline.txt / test_img_b64.txt  ← 过程产物，大部分可删（见 §7）
 ```
 
-> **重要**：`uploadCloudFunction.sh` 是早期脚本，**只部署 `quickstartFunctions`**（demo 函数）。真正的业务函数 `miaojiRecord` **通过 CloudBase MCP（`manageFunctions` → `updateFunctionCode`，functionRootPath=项目根目录 `cloudfunctions`）部署**。不要把部署脚本当成部署 `miaojiRecord` 的途径。
+> **重要**：`uploadCloudFunction.sh` 是早期脚本，**只部署 demo 函数**。真正的业务函数 `miaojiRecord` **通过 CloudBase MCP（`manageFunctions` → `updateFunctionCode`，functionRootPath=项目根目录 `cloudfunctions`）部署**。不要把部署脚本当成部署 `miaojiRecord` 的途径。
 
 ---
 
@@ -314,7 +313,7 @@ node ci-tools/compile.js upload
 ### 6.2 云函数 `miaojiRecord`（业务函数）
 
 **用 CloudBase MCP**：`manageFunctions(action=updateFunctionCode, functionRootPath=<项目根>/cloudfunctions, functionName=miaojiRecord)`。
-> ⚠️ 不要用 `uploadCloudFunction.sh`（只部署 demo 的 quickstartFunctions）。
+> ⚠️ 不要用 `uploadCloudFunction.sh`（只部署早期 demo 函数，不部署业务函数）。
 > ⚠️ 改完必重新上传；线上跑的是上传的版本，不是本地文件。
 > ⚠️ 部署后有冷启动缓存，首次 invoke 可能跑旧实例，需二次 invoke 验证才是真新版（gotcha #15）。
 

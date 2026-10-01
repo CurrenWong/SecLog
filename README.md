@@ -180,7 +180,7 @@ node ci-tools/compile.js preview
 
 ## 云函数部署
 
-> ⚠️ **不要用 `./uploadCloudFunction.sh` 部署业务函数**——该脚本只部署 `quickstartFunctions`（早期压测 demo），与产品无关。
+> ⚠️ **不要用 `./uploadCloudFunction.sh` 部署业务函数**——该脚本只部署早期 demo 函数，不部署 `miaojiRecord` / `travelRecord`。
 
 **业务函数 `miaojiRecord` / `travelRecord` 通过 CloudBase MCP 部署**（改代码后必须重传，本地改了 ≠ 线上跑新版）：
 
@@ -217,7 +217,6 @@ CloudBase MCP → manageFunctions(action=updateFunctionCode, functionRootPath=<�
 | 旅游记录模块 | ✅ 已上线（独立 travelRecord 云函数 + 4 页：旅程列表/详情/日记编辑/旅程编辑） |
 | 多日行程批量记录 | ✅ 已上线（batchJournal 页面：自然语言/语音输入，AI 自动解析多天并按天展示） |
 | 相邻地点驾车距离 | ✅ 已上线（腾讯地图 API 驾车路线规划，自动地理编码 + AI 智能城市判断兜底） |
-| `quickstartFunctions` | 🟡 早期压测 demo，与产品无关，可删 |
 
 ## 文档参考
 
@@ -229,7 +228,7 @@ CloudBase MCP → manageFunctions(action=updateFunctionCode, functionRootPath=<�
 
 ## ⚠️ 部署提醒（改完必看）
 
-- **云函数改完必须重传**：`miaojiRecord` 的 `ocr`/`login`/`updateProfile` 是新增 action，已在 `seclog-d1g8no5pc45e643aa` 环境部署过；但**本地改了 ≠ 线上跑新版**，每次改云函数代码都要通过 **CloudBase MCP `manageFunctions(updateFunctionCode)`** 重新上传（见「云函数部署」一节）。注意 `./uploadCloudFunction.sh` 只部署 demo 的 `quickstartFunctions`，**不部署业务函数**。
+- **云函数改完必须重传**：`miaojiRecord` 的 `ocr`/`login`/`updateProfile` 是新增 action，已在 `seclog-d1g8no5pc45e643aa` 环境部署过；但**本地改了 ≠ 线上跑新版**，每次改云函数代码都要通过 **CloudBase MCP `manageFunctions(updateFunctionCode)`** 重新上传（见「云函数部署」一节）。注意 `./uploadCloudFunction.sh` 只部署早期 demo 函数，**不部署业务函数**。
 - **拍照记账视觉模型（DeepSeek）**：`ocr` action 调 `https://api.deepseek.com/chat/completions`（OpenAI 兼容），**API Key 必须配云函数环境变量 `DEEPSEEK_API_KEY`**（控制台 → 云函数 → 配置 → 环境变量），缺了会返回 `AI_UNAVAILABLE`。模型名默认 `deepseek-flash`（多模态视觉版），可用环境变量 `DEEPSEEK_MODEL` 覆盖。Key 绝不进代码仓库（守卫测试会拦截 `sk-` 硬编码）。
 - **意图识别硬规则（1.0.7 起）**：正则命中 `regexExpense`/`queryHint`/`undoHint` 时，**无论模型说什么/是否失败，都强制执行对应操作**（doAdd/tryQuery/tryUndo）。目的是杜绝"模型幻觉已记账但代码没写库"；模型角色从唯一决策者变为"正则未覆盖场景的兜底"。
 - **wx-server-sdk 版本**：云函数数据库/存储操作需要 `wx-server-sdk`，老版本 2.6.3 缺部分 API；保持 `>= 3.x`。
