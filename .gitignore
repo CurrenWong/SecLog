@@ -11,8 +11,8 @@ miniprogram_npm/
 ci-tools/.build/
 ci-tools/qrcode-*.png
 
-# 微信开发者工具缓存
-.project.private.config.json
+# 微信开发者工具缓存（私有配置，含本地设置，不上传）
+project.private.config.json
 .wepy_cache/
 
 # ===== 通用 =====
@@ -45,6 +45,12 @@ Thumbs.db
 # Self-improvement: 项目本地 .learnings/（不入库，按 self-improving-agent skill 规则）
 .learnings/
 
+# 个人会话/项目记忆笔记（Agent 内部上下文，不进公开仓库）
+memory/
+
+# Python 脚本（过程产物，非项目运行所需）
+gen_small_receipt.py
+
 # ===== Python（备用）=====
 
 __pycache__/
@@ -52,13 +58,10 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
-  
-# ===== 大二进制占位（测试头像，不入库）=====  
-avatars/*.png  
-gen_small_receipt.py  
-ci-tools/j.txt  
-ci-tools/jest_out.txt  
-ci-tools/jest_full.txt  
-ci-tools/preview_out.txt  
-MULTI_RECORD_MODEL_TODO.md 
-README_UPDATE_TODO.md 
+
+# ===== 大二进制占位（测试头像，不入库）=====
+avatars/*.png
+ci-tools/j.txt
+ci-tools/jest_out.txt
+ci-tools/jest_full.txt
+ci-tools/preview_out.txt
