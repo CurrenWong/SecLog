@@ -15,8 +15,8 @@ ci-tools/qrcode-*.png
 project.private.config.json
 .wepy_cache/
 
-# 本地 AppID 配置（含真实 AppID，不入库；仓库内用占位符代替）
-ci-tools/appids.config.json
+# 本地 AppID 配置（含真实 AppID，不入库；仓库内用占位符代替，真实值存 project.private.config.json）
+
 
 # ===== 通用 =====
 
